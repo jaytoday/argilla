@@ -23,16 +23,26 @@ module.exports = {
     jest: true,
   },
   extends: [
-    "plugin:nuxt/recommended",
     "eslint:recommended",
-    "prettier/vue",
+    "plugin:@intlify/vue-i18n/recommended",
     "plugin:prettier/recommended",
-    "plugin:cypress/recommended",
+    "plugin:nuxt/recommended",
+    "prettier/vue",
   ],
+  settings: {
+    "vue-i18n": {
+      localeDir: "./translation/*.json",
+    },
+  },
   rules: {
     "no-console": process.env.NODE_ENV === "production" ? "error" : "off",
     "no-debugger": process.env.NODE_ENV === "production" ? "error" : "off",
-    "prettier/prettier": "warn",
+    "prefer-const": "error",
+    "prefer-arrow-callback": "error",
+    "no-unused-vars": ["error", { ignoreRestSiblings: true }],
+    "@intlify/vue-i18n/no-raw-text": "off",
+    "@intlify/vue-i18n/no-v-html": "off",
+    "@intlify/vue-i18n/no-missing-keys": "error",
   },
   globals: {
     $nuxt: true,
@@ -40,4 +50,23 @@ module.exports = {
   parserOptions: {
     parser: "@babel/eslint-parser",
   },
+  overrides: [
+    {
+      files: ["**/*.ts"],
+      extends: ["@nuxtjs/eslint-config-typescript", "prettier"],
+      parser: "@typescript-eslint/parser",
+      plugins: ["@typescript-eslint", "prettier"],
+      parserOptions: { project: ["./tsconfig.json"] },
+      rules: {
+        "prettier/prettier": ["error"],
+        quotes: ["error", "double"],
+        semi: ["error", "always"],
+        "import/no-named-as-default-member": 0,
+        "no-useless-constructor": 0,
+        "space-before-function-paren": 0,
+        "no-throw-literal": 0,
+        "no-new": 0,
+      },
+    },
+  ],
 };

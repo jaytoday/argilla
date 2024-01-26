@@ -18,8 +18,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
-from pydantic import BaseModel, Field
-
 from argilla.client.apis import AbstractApi, api_compatibility
 from argilla.client.sdk.commons.errors import (
     AlreadyExistsApiError,
@@ -29,6 +27,7 @@ from argilla.client.sdk.commons.errors import (
 )
 from argilla.client.sdk.datasets.api import get_dataset
 from argilla.client.sdk.datasets.models import TaskType
+from argilla.pydantic_v1 import BaseModel, Field
 
 
 @dataclass
@@ -57,12 +56,26 @@ class LabelsSchemaSettings(_AbstractSettings):
 
     """
 
-    label_schema: Set[str]
+    label_schema: List[str]
+
+    def __post_init__(self):
+        if not isinstance(self.label_schema, (set, list, tuple)):
+            raise ValueError(
+                f"`label_schema` is of type={type(self.label_schema)}, but type=set is preferred, and also both type=list and type=tuple are allowed."
+            )
+        self.label_schema = self._get_unique_labels()
+
+    def _get_unique_labels(self) -> List[str]:
+        unique_labels = []
+        for label in self.label_schema:
+            if label not in unique_labels:
+                unique_labels.append(label)
+        return unique_labels
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "LabelsSchemaSettings":
         label_schema = data.get("label_schema", {})
-        labels = {label["name"] for label in label_schema.get("labels", [])}
+        labels = [label["name"] for label in label_schema.get("labels", [])]
         return cls(label_schema=labels)
 
     @property
@@ -124,27 +137,19 @@ class Datasets(AbstractApi):
     class _SettingsApiModel(BaseModel):
         label_schema: Dict[str, Any]
 
-    def find_by_name(self, name: str) -> _DatasetApiModel:
-        dataset = get_dataset(self.http_client, name=name).parsed
+    def find_by_name(self, name: str, workspace: Optional[str] = None) -> _DatasetApiModel:
+        dataset = get_dataset(self.http_client, name=name, workspace=workspace).parsed
         return self._DatasetApiModel.parse_obj(dataset)
 
-    def create(self, name: str, workspace: str, settings: Settings):
-        task = (
-            TaskType.text_classification
-            if isinstance(settings, TextClassificationSettings)
-            else TaskType.token_classification
-        )
-
+    def create(self, name: str, task: TaskType, workspace: str) -> _DatasetApiModel:
         try:
             with api_compatibility(self, min_version="1.4.0"):
                 dataset = self._DatasetApiModel(name=name, task=task, workspace=workspace)
                 self.http_client.post(f"{self._API_PREFIX}", json=dataset.dict())
-                self._save_settings(dataset, settings=settings)
         except ApiCompatibilityError:
-            with api_compatibility(self, min_version=self.__SETTINGS_MIN_API_VERSION__):
-                dataset = self._DatasetApiModel(name=name, task=task)
-                self.http_client.post(f"{self._API_PREFIX}?workspace={workspace}", json=dataset.dict())
-                self._save_settings(dataset, settings=settings)
+            dataset = self._DatasetApiModel(name=name, task=task)
+            self.http_client.post(f"{self._API_PREFIX}?workspace={workspace}", json=dataset.dict())
+        return dataset
 
     def configure(self, name: str, workspace: str, settings: Settings):
         """
@@ -157,10 +162,15 @@ class Datasets(AbstractApi):
             settings: The dataset settings
         """
         try:
-            self.create(name=name, workspace=workspace, settings=settings)
+            task = (
+                TaskType.text_classification
+                if isinstance(settings, TextClassificationSettings)
+                else TaskType.token_classification
+            )
+            ds = self.create(name=name, task=task, workspace=workspace)
         except AlreadyExistsApiError:
-            ds = self.find_by_name(name)
-            self._save_settings(dataset=ds, settings=settings)
+            ds = self.find_by_name(name, workspace=workspace)
+        self._save_settings(dataset=ds, settings=settings)
 
     def scan(
         self,
@@ -308,38 +318,44 @@ class Datasets(AbstractApi):
     def _save_settings(self, dataset: _DatasetApiModel, settings: Settings):
         if __TASK_TO_SETTINGS__.get(dataset.task) != type(settings):
             raise ValueError(
-                f"The provided settings type {type(settings)} cannot be applied to dataset." " Task type mismatch"
+                f"The provided settings type {type(settings)} cannot be applied to dataset. Task type mismatch"
             )
 
-        settings_ = self._SettingsApiModel(label_schema={"labels": [label for label in settings.label_schema]})
+        settings_ = self._SettingsApiModel.parse_obj(
+            {"label_schema": {"labels": [label for label in settings.label_schema]}}
+        )
 
         try:
             with api_compatibility(self, min_version="1.4"):
                 self.http_client.patch(
-                    f"{self._API_PREFIX}/{dataset.name}/{dataset.task}/settings",
+                    f"{self._API_PREFIX}/{dataset.name}/{dataset.task.value}/settings?workspace={dataset.workspace}",
                     json=settings_.dict(),
                 )
         except ApiCompatibilityError:
             with api_compatibility(self, min_version="0.15"):
                 self.http_client.put(
-                    f"{self._API_PREFIX}/{dataset.task}/{dataset.name}/settings",
+                    f"{self._API_PREFIX}/{dataset.task.value}/{dataset.name}/settings",
                     json=settings_.dict(),
                 )
 
-    def load_settings(self, name: str) -> Optional[Settings]:
+    def load_settings(self, name: str, workspace: Optional[str] = None) -> Optional[Settings]:
         """
         Load the dataset settings
 
         Args:
             name: The dataset name
+            workspace: The workspace name where the dataset belongs to
 
         Returns:
             Settings defined for the dataset
         """
-        dataset = self.find_by_name(name)
+        dataset = self.find_by_name(name, workspace=workspace)
         try:
             with api_compatibility(self, min_version="1.0"):
-                response = self.http_client.get(f"{self._API_PREFIX}/{dataset.name}/{dataset.task}/settings")
+                params = {"workspace": dataset.workspace} if dataset.workspace else {}
+                response = self.http_client.get(
+                    f"{self._API_PREFIX}/{dataset.name}/{dataset.task.value}/settings", params=params
+                )
                 return __TASK_TO_SETTINGS__.get(dataset.task).from_dict(response)
         except NotFoundApiError:
             return None

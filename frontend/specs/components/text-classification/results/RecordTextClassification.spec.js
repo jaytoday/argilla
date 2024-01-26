@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import Component from "@/components/text-classifier/results/RecordTextClassification";
+import Component from "@/components/text-classification/results/RecordTextClassification";
 
 import { TextClassificationRecord } from "@/models/TextClassification";
 
@@ -49,7 +49,7 @@ function mountComponent() {
 }
 
 describe("RecordTextClassification", () => {
-  let spy = jest.spyOn(console, "error");
+  const spy = jest.spyOn(console, "error");
   afterEach(() => spy.mockReset());
 
   test.skip("Required property", () => {

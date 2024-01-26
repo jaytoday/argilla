@@ -12,238 +12,597 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from typing import Callable
+from typing import Awaitable, Callable, Optional
+from uuid import UUID
 
-from sqlalchemy.orm.session import Session
+from sqlalchemy.ext.asyncio import async_object_session
 
 from argilla.server.contexts import accounts
+from argilla.server.daos.models.datasets import DatasetDB
 from argilla.server.errors import ForbiddenOperationError
 from argilla.server.models import (
     Dataset,
+    Field,
+    MetadataProperty,
+    Question,
     Record,
     Response,
+    Suggestion,
     User,
     UserRole,
+    VectorSettings,
     Workspace,
     WorkspaceUser,
 )
 
-PolicyAction = Callable[[User], bool]
+PolicyAction = Callable[[User], Awaitable[bool]]
+
+
+async def _exists_workspace_user_by_user_and_workspace_id(user: User, workspace_id: UUID) -> bool:
+    db = async_object_session(user)
+    workspace = await accounts.get_workspace_user_by_workspace_id_and_user_id(db, workspace_id, user.id)
+    return workspace is not None
+
+
+async def _exists_workspace_user_by_user_and_workspace_name(user: User, workspace_name: str) -> bool:
+    db = async_object_session(user)
+    workspace = await accounts.get_workspace_by_name(db, workspace_name)
+    if workspace is None:
+        return False
+    return await accounts.get_workspace_user_by_workspace_id_and_user_id(db, workspace.id, user.id) is not None
 
 
 class WorkspaceUserPolicy:
     @classmethod
-    def list(cls, actor: User) -> bool:
-        return actor.role == UserRole.admin
+    def list(cls, workspace_id: UUID) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, workspace_id)
+            )
+
+        return is_allowed
 
     @classmethod
-    def create(cls, actor: User) -> bool:
-        return actor.role == UserRole.admin
+    async def create(cls, actor: User) -> bool:
+        return actor.is_owner
 
     @classmethod
     def delete(cls, workspace_user: WorkspaceUser) -> PolicyAction:
-        return lambda actor: actor.role == UserRole.admin
+        async def is_allowed(actor: User) -> bool:
+            return actor.role == UserRole.owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, workspace_user.workspace_id)
+            )
+
+        return is_allowed
 
 
 class WorkspacePolicy:
     @classmethod
-    def list(cls, actor: User) -> bool:
+    async def list(cls, actor: User) -> bool:
         return True
 
     @classmethod
-    def create(cls, actor: User) -> bool:
-        # TODO: Once we receive ORM User models instead of Pydantic schema for current_user we can
-        # change role checks to use `actor.is_admin` or `actor.is_annotator`
-        return actor.role == UserRole.admin
+    async def create(cls, actor: User) -> bool:
+        return actor.is_owner
 
     @classmethod
     def delete(cls, workspace: Workspace) -> PolicyAction:
-        return lambda actor: actor.role == UserRole.admin
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner
+
+        return is_allowed
 
 
 class WorkspacePolicyV1:
     @classmethod
-    def get(cls, workspace: Workspace) -> PolicyAction:
-        return lambda actor: (
-            actor.is_admin
-            or bool(
-                accounts.get_workspace_user_by_workspace_id_and_user_id(
-                    Session.object_session(actor),
-                    workspace.id,
-                    actor.id,
-                )
-            )
-        )
+    def get(cls, workspace_id: UUID) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or await _exists_workspace_user_by_user_and_workspace_id(actor, workspace_id)
+
+        return is_allowed
+
+    @classmethod
+    async def delete(cls, actor: User) -> bool:
+        return actor.is_owner
+
+    @classmethod
+    async def list_workspaces_me(cls, actor: User) -> bool:
+        return True
 
 
 class UserPolicy:
     @classmethod
-    def list(cls, actor: User) -> bool:
-        return actor.role == UserRole.admin
+    async def list(cls, actor: User) -> bool:
+        return actor.is_owner
 
     @classmethod
-    def create(cls, actor: User) -> bool:
-        return actor.role == UserRole.admin
+    async def create(cls, actor: User) -> bool:
+        return actor.is_owner
 
     @classmethod
     def delete(cls, user: User) -> PolicyAction:
-        return lambda actor: actor.role == UserRole.admin
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner
+
+        return is_allowed
+
+
+class UserPolicyV1:
+    @classmethod
+    async def list_workspaces(cls, actor: User) -> bool:
+        return actor.is_owner
 
 
 class DatasetPolicy:
     @classmethod
-    def list(cls, user: User) -> bool:
+    async def list(cls, user: User) -> bool:
         return True
 
     @classmethod
-    def get(cls, dataset: Dataset) -> PolicyAction:
-        return lambda actor: actor.is_admin or dataset.workspace in [ws.name for ws in actor.workspaces]
+    def get(cls, dataset: DatasetDB) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or await _exists_workspace_user_by_user_and_workspace_name(actor, dataset.workspace)
+
+        return is_allowed
 
     @classmethod
-    def create(cls, user: User) -> bool:
-        return user.is_admin
+    def create(cls, workspace_name: str) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_name(actor, workspace_name)
+            )
+
+        return is_allowed
 
     @classmethod
-    def update(cls, dataset: Dataset) -> PolicyAction:
-        is_get_allowed = cls.get(dataset)
-        return lambda actor: actor.is_admin or is_get_allowed(actor)
+    def update(cls, dataset: DatasetDB) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or await _exists_workspace_user_by_user_and_workspace_name(actor, dataset.workspace)
+
+        return is_allowed
 
     @classmethod
-    def delete(cls, dataset: Dataset) -> PolicyAction:
-        is_get_allowed = cls.get(dataset)
-        return lambda actor: actor.is_admin or (is_get_allowed(actor) and actor.username == dataset.created_by)
+    def delete(cls, dataset: DatasetDB) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_name(actor, dataset.workspace)
+            )
+
+        return is_allowed
 
     @classmethod
-    def open(cls, dataset: Dataset) -> PolicyAction:
-        is_get_allowed = cls.get(dataset)
-        return lambda actor: actor.is_admin or (is_get_allowed(actor) and actor.username == dataset.created_by)
+    def open(cls, dataset: DatasetDB) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_name(actor, dataset.workspace)
+            )
+
+        return is_allowed
 
     @classmethod
-    def close(cls, dataset: Dataset) -> PolicyAction:
-        is_get_allowed = cls.get(dataset)
-        return lambda actor: actor.is_admin or (is_get_allowed(actor) and actor.username == dataset.created_by)
+    def close(cls, dataset: DatasetDB) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_name(actor, dataset.workspace)
+            )
+
+        return is_allowed
 
     @classmethod
-    def copy(cls, dataset: Dataset) -> PolicyAction:
-        is_get_allowed = cls.get(dataset)
-        return lambda actor: actor.is_admin or is_get_allowed(actor) and cls.create(actor)
+    def copy(cls, dataset: DatasetDB, target_workspace: Workspace) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, target_workspace.id)
+                and await _exists_workspace_user_by_user_and_workspace_name(actor, dataset.workspace)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def delete_records(cls, dataset: DatasetDB) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_name(actor, dataset.workspace)
+            )
+
+        return is_allowed
 
 
 class DatasetPolicyV1:
     @classmethod
-    def list(cls, actor: User) -> bool:
-        return True
+    def list(cls, workspace_id: Optional[UUID] = None) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            if actor.is_owner or workspace_id is None:
+                return True
+
+            return await _exists_workspace_user_by_user_and_workspace_id(actor, workspace_id)
+
+        return is_allowed
+
+    @classmethod
+    def list_records_with_all_responses(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+            )
+
+        return is_allowed
 
     @classmethod
     def get(cls, dataset: Dataset) -> PolicyAction:
-        return lambda actor: (
-            actor.is_admin
-            or bool(
-                accounts.get_workspace_user_by_workspace_id_and_user_id(
-                    Session.object_session(actor),
-                    dataset.workspace_id,
-                    actor.id,
-                )
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+
+        return is_allowed
+
+    @classmethod
+    def create(cls, workspace_id: UUID) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, workspace_id)
             )
-        )
+
+        return is_allowed
 
     @classmethod
-    def list_dataset_records_will_all_responses(cls, dataset: Dataset) -> PolicyAction:
-        return lambda actor: actor.is_admin
-
-    @classmethod
-    def create(cls, actor: User) -> bool:
-        return actor.is_admin
-
-    @classmethod
-    def create_field(cls, actor: User) -> bool:
-        return actor.is_admin
-
-    @classmethod
-    def create_question(cls, actor: User) -> bool:
-        return actor.is_admin
-
-    @classmethod
-    def create_records(cls, actor: User) -> bool:
-        return actor.is_admin
-
-    @classmethod
-    def search_records(cls, dataset: Dataset) -> bool:
-        return lambda actor: (
-            actor.is_admin
-            or bool(
-                accounts.get_workspace_user_by_workspace_id_and_user_id(
-                    Session.object_session(actor),
-                    dataset.workspace_id,
-                    actor.id,
-                )
+    def create_field(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
             )
-        )
+
+        return is_allowed
 
     @classmethod
-    def publish(cls, actor: User) -> bool:
-        return actor.is_admin
+    def create_question(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+            )
+
+        return is_allowed
 
     @classmethod
-    def delete(cls, actor: User) -> bool:
-        return actor.is_admin
+    def create_metadata_property(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def create_vectors(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def create_vector_settings(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def create_records(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def update_records(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def delete_records(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def search_records(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+
+        return is_allowed
+
+    @classmethod
+    def search_records_with_all_responses(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def publish(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def delete(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def update(cls, dataset: Dataset) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_id(actor, dataset.workspace_id)
+            )
+
+        return is_allowed
 
 
 class FieldPolicyV1:
     @classmethod
-    def delete(cls, actor: User) -> bool:
-        return actor.is_admin
+    def update(cls, field: Field) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, field.dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def delete(cls, field: Field) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, field.dataset.workspace_id)
+            )
+
+        return is_allowed
 
 
 class QuestionPolicyV1:
     @classmethod
-    def delete(cls, actor: User) -> bool:
-        return actor.is_admin
+    def update(cls, question: Question) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, question.dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def delete(cls, question: Question) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, question.dataset.workspace_id)
+            )
+
+        return is_allowed
+
+
+class VectorSettingsPolicyV1:
+    @classmethod
+    def update(cls, vector_settings: VectorSettings) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, vector_settings.dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def delete(cls, vector_settings: VectorSettings) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, vector_settings.dataset.workspace_id)
+            )
+
+        return is_allowed
+
+
+class MetadataPropertyPolicyV1:
+    @classmethod
+    def get(cls, metadata_property: MetadataProperty) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.role in metadata_property.allowed_roles
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, metadata_property.dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def update(cls, metadata_property: MetadataProperty) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, metadata_property.dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def delete(cls, metadata_property: MetadataProperty) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, metadata_property.dataset.workspace_id)
+            )
+
+        return is_allowed
 
 
 class RecordPolicyV1:
     @classmethod
-    def create_response(cls, record: Record) -> PolicyAction:
-        return lambda actor: (
-            actor.is_admin
-            or bool(
-                accounts.get_workspace_user_by_workspace_id_and_user_id(
-                    Session.object_session(actor),
-                    record.dataset.workspace_id,
-                    actor.id,
-                )
+    def get(cls, record: Record) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or await _exists_workspace_user_by_user_and_workspace_id(
+                actor, record.dataset.workspace_id
             )
-        )
+
+        return is_allowed
+
+    @classmethod
+    def update(cls, record: Record) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, record.dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def delete(cls, record: Record) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, record.dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def create_response(cls, record: Record) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or await _exists_workspace_user_by_user_and_workspace_id(
+                actor, record.dataset.workspace_id
+            )
+
+        return is_allowed
+
+    @classmethod
+    def get_suggestions(cls, record: Record) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or await _exists_workspace_user_by_user_and_workspace_id(
+                actor, record.dataset.workspace_id
+            )
+
+        return is_allowed
+
+    @classmethod
+    def create_suggestion(cls, record: Record) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, record.dataset.workspace_id)
+            )
+
+        return is_allowed
+
+    @classmethod
+    def delete_suggestions(cls, record: Record) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, record.dataset.workspace_id)
+            )
+
+        return is_allowed
 
 
 class ResponsePolicyV1:
     @classmethod
     def update(cls, response: Response) -> PolicyAction:
-        return lambda actor: actor.is_admin or actor.id == response.user_id
+        async def is_allowed(actor: User) -> bool:
+            return (
+                actor.is_owner
+                or actor.id == response.user_id
+                or (
+                    actor.is_admin
+                    and await _exists_workspace_user_by_user_and_workspace_id(
+                        actor, response.record.dataset.workspace_id
+                    )
+                )
+            )
+
+        return is_allowed
 
     @classmethod
     def delete(cls, response: Response) -> PolicyAction:
-        return lambda actor: actor.is_admin or actor.id == response.user_id
+        async def is_allowed(actor: User) -> bool:
+            return (
+                actor.is_owner
+                or actor.id == response.user_id
+                or (
+                    actor.is_admin
+                    and await _exists_workspace_user_by_user_and_workspace_id(
+                        actor, response.record.dataset.workspace_id
+                    )
+                )
+            )
+
+        return is_allowed
+
+
+class SuggestionPolicyV1:
+    @classmethod
+    def delete(cls, suggestion: Suggestion) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin
+                and await _exists_workspace_user_by_user_and_workspace_id(actor, suggestion.record.dataset.workspace_id)
+            )
+
+        return is_allowed
 
 
 class DatasetSettingsPolicy:
     @classmethod
-    def list(cls, dataset: Dataset) -> PolicyAction:
+    def list(cls, dataset: DatasetDB) -> PolicyAction:
         return DatasetPolicy.get(dataset)
 
     @classmethod
-    def save(cls, dataset: Dataset) -> PolicyAction:
-        return lambda actor: actor.is_admin
+    def save(cls, dataset: DatasetDB) -> PolicyAction:
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_name(actor, dataset.workspace)
+            )
+
+        return is_allowed
 
     @classmethod
     def delete(cls, dataset: Dataset) -> PolicyAction:
-        return lambda actor: actor.is_admin
+        async def is_allowed(actor: User) -> bool:
+            return actor.is_owner or (
+                actor.is_admin and await _exists_workspace_user_by_user_and_workspace_name(actor, dataset.workspace)
+            )
+
+        return is_allowed
 
 
-def authorize(actor: User, policy_action: PolicyAction) -> None:
-    if not is_authorized(actor, policy_action):
+async def authorize(actor: User, policy_action: PolicyAction) -> None:
+    if not await is_authorized(actor, policy_action):
         raise ForbiddenOperationError()
 
 
-def is_authorized(actor: User, policy_action: PolicyAction) -> bool:
-    return policy_action(actor)
+async def is_authorized(actor: User, policy_action: PolicyAction) -> bool:
+    return await policy_action(actor)

@@ -23,14 +23,7 @@ from argilla.server.daos.backend.search.query_builder import EsQueryBuilder
 
 ES_CLIENT_VERSION: str = elasticsearch8.__versionstr__
 
-from elasticsearch8 import (
-    ApiError,
-    Elasticsearch,
-    ElasticsearchWarning,
-    NotFoundError,
-    RequestError,
-    helpers,
-)
+from elasticsearch8 import ApiError, Elasticsearch, ElasticsearchWarning, NotFoundError, RequestError, helpers
 from elasticsearch8.helpers import BulkIndexError
 
 
@@ -56,8 +49,6 @@ class ElasticsearchClient(OpenSearchClient):
         vectors: Dict[str, int],
         similarity_metric: str = "l2_norm",
     ):
-        self._check_vector_supported()
-
         vector_mappings = {}
         for vector_name, vector_dimension in vectors.items():
             index_mapping = {
@@ -113,7 +104,6 @@ class ElasticsearchClient(OpenSearchClient):
     ):
         knn = es_query.pop("knn", None)
         if knn:
-            self._check_vector_supported()
             results = self.__client__.search(
                 index=index,
                 knn=knn,

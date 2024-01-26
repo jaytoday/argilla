@@ -76,7 +76,7 @@ async function _getOrFetchDataset({ workspace, name }) {
    * Find locally a dataset by its name and fetch from backend if not found
    */
 
-  let ds = ObservationDataset.find([workspace, name]);
+  const ds = ObservationDataset.find([workspace, name]);
   if (ds !== null) {
     return ds;
   }
@@ -233,13 +233,7 @@ async function updateViewSettings({ id, data }) {
 }
 
 async function _callSearchApi({ dataset, query, sort, size, from = 0 }) {
-  const { advancedQueryDsl } = $nuxt.$route.query;
-  if (advancedQueryDsl === null || advancedQueryDsl === "true") {
-    query.advanced_query_dsl = true;
-  }
-
   const vector = VectorModel.query().where("is_active", true).first();
-
   const numberOfRecords = vector ? 50 : size;
 
   const { record_id, vector_name, vector_values } = vector || {};
@@ -417,7 +411,7 @@ async function _updateDatasetRecords({
   if (records.length === 0) {
     return;
   }
-  let aggregations = {};
+  const aggregations = {};
   const entity = dataset.getTaskDatasetClass();
   const arePendingRecords = records.some(
     (record) => record.status === "Edited"
@@ -465,8 +459,8 @@ async function _updateTaskDataset({ dataset, data }) {
   const entity = dataset.getTaskDatasetClass();
   const { globalResults, results } = data;
 
-  let datasetResults = dataset.$toJson().results || {};
-  let dataResults = results || {};
+  const datasetResults = dataset.$toJson().results || {};
+  const dataResults = results || {};
 
   if (globalResults && globalResults.aggregations) {
     datasetResults.aggregations = globalResults.aggregations;
@@ -794,7 +788,7 @@ const actions = {
       message = `${datasetName} has been deleted`;
       typeOfNotification = "success";
     } catch ({ response }) {
-      let { status } = response;
+      const { status } = response;
       statusCall = status;
       message = `It is not possible to delete ${datasetName}`;
       typeOfNotification = "error";

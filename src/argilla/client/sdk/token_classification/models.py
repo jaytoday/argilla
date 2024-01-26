@@ -15,12 +15,8 @@
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, validator
-
 from argilla._constants import DEFAULT_MAX_KEYWORD_LENGTH
-from argilla.client.models import (
-    TokenClassificationRecord as ClientTokenClassificationRecord,
-)
+from argilla.client.models import TokenClassificationRecord as ClientTokenClassificationRecord
 from argilla.client.sdk.commons.models import (
     MACHINE_NAME,
     BaseAnnotation,
@@ -31,6 +27,7 @@ from argilla.client.sdk.commons.models import (
     TaskStatus,
     UpdateDatasetRequest,
 )
+from argilla.pydantic_v1 import BaseModel, Field, validator
 
 
 class EntitySpan(BaseModel):
@@ -123,7 +120,6 @@ class TokenClassificationQuery(BaseModel):
     ids: Optional[List[Union[str, int]]]
 
     query_text: str = Field(default=None)
-    advanced_query_dsl: bool = False
     metadata: Optional[Dict[str, Union[str, List[str]]]] = None
 
     predicted_as: List[str] = Field(default_factory=list)

@@ -12,6 +12,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from sqlalchemy import orm
+import asyncio
+from typing import Union
 
-TestSession = orm.scoped_session(orm.sessionmaker())
+from sqlalchemy import orm
+from sqlalchemy.ext.asyncio import async_scoped_session, async_sessionmaker
+
+task: Union[asyncio.Task, None] = None
+
+
+def set_task(t: asyncio.Task):
+    global task
+    task = t
+
+
+def get_task() -> asyncio.Task:
+    return task
+
+
+TestSession = async_scoped_session(async_sessionmaker(expire_on_commit=False, future=True), get_task)
+SyncTestSession = orm.scoped_session(orm.sessionmaker(class_=orm.Session, expire_on_commit=False))

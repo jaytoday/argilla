@@ -5,7 +5,7 @@ If you have already running a Rubrix server and want to upgrade to the new Argil
 ## Python module and command
 
 The module now is called `argilla` instead of `rubrix`, but the rest of the code remains fully compatible, so
-if you have to updgrade some codebase, you should just replace the line:
+if you have to upgrade some codebase, you should just replace the line:
 
 `import rubrix...`
 
@@ -13,11 +13,10 @@ with the new module name
 
 `import argilla...`
 
-
 Equivalently, to launch the server:
 
 ````bash
-python -m argilla
+argilla server start
 ````
 
 instead of
@@ -29,10 +28,11 @@ python -m rubrix
 ## Environment variables
 
 All the environment variables have changed from using the prefix `RUBRIX_` to using the prefix `ARGILLA_`.
-The `ELASTICSEARCH` and other non-prefixed variables are still available, but they will be removed in the future.
-You should use `ARGILLA_` version instead.
 
-The best to configure a new Argilla Server from Rubrix is just to duplicate all ENV variables for
+.. warning::
+  From version `1.13.0`, the support for non-prefixed environment variables has been removed. All environment variables must be prefixed with `ARGILLA_`.
+
+The best way to configure a new Argilla Server from Rubrix is just to duplicate all ENV variables for
 both, Rubrix and Argilla instances. This will simplify a version rollback if needed.
 
 ## New Elasticsearch index naming conventions
@@ -46,18 +46,18 @@ For indices containing the dataset records, the new name convention is `ar.datas
 
 ## Enable migration process
 
-By default, the new Argilla server won't check if datasets from a previous Rubrix instance exists.
+By default, the new Argilla server won't check if datasets from a previous Rubrix instance exist.
 
 If you want the new Argilla Server to detect previous Rubrix datasets and make them accessible into your Argilla Server instance you can set the `ARGILLA_ENABLE_MIGRATION` like this before starting the Argilla server:
 
 ```bash
-ARGILLA_ENABLE_MIGRATION=1 python -m argilla
+ARGILLA_ENABLE_MIGRATION=1 argilla server start
 ```
 
 This will fetch info contained in the Rubrix instance `.rubrix.datasetsw-v0` index and
 will copy the info into the new `ar.datasets` index.
 
-Then, for each old rubrix index, will create an alias with new new name convention format.
+Then, for each old rubrix index, will create an alias with new naming convention format.
 
 This will allow you to work with previous Rubrix datasets from your new Argilla Server without duplicating information and still see the changes from your previous Rubrix Server.
 

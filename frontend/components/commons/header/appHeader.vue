@@ -31,7 +31,7 @@
         <BaseButton
           class="header__button small"
           @on-click="onClickTrain"
-          v-if="isAdminRole"
+          v-if="isAdminOrOwnerRole"
         >
           <svgicon name="code" width="20" height="20" />Train
         </BaseButton>
@@ -40,7 +40,7 @@
           @click-settings-icon="goToSettings()"
         />
       </template>
-      <user />
+      <user-avatar-tooltip />
     </base-topbar-brand>
     <loading-line v-if="showRecordsLoader" />
     <task-sidebar
@@ -121,8 +121,12 @@ export default {
     viewSettings() {
       return DatasetViewSettings.query().whereId(this.datasetName).first();
     },
-    isAdminRole() {
-      return this.$auth.user.role === "admin";
+    /**
+     * @deprecated Replace with useRole
+     */
+    isAdminOrOwnerRole() {
+      const role = this.$auth.user.role;
+      return role === "admin" || role === "owner";
     },
     globalHeaderHeight() {
       if (this.sticky && this.dataset) {
@@ -212,7 +216,6 @@ export default {
 $header-button-color: #262a2e;
 .header {
   opacity: 1;
-  position: relative;
   transition: none;
   top: 0;
   right: 0;

@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import EntitiesSelector from "@/components/token-classifier/results/EntitiesSelector";
+import EntitiesSelector from "@/components/token-classification/results/EntitiesSelector";
 const $entitiesMaxColors = 50;
 
 function mountEntitiesSelector() {
@@ -45,7 +45,7 @@ function mountEntitiesSelector() {
 }
 
 describe("EntitiesSelector", () => {
-  let spy = jest.spyOn(console, "error");
+  const spy = jest.spyOn(console, "error");
   afterEach(() => spy.mockReset());
 
   test("renders properly", () => {

@@ -14,27 +14,26 @@
 
 import logging
 import os
+import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
-import argilla as rg
-from argilla.client.models import (
-    Framework,
-    Text2TextRecord,
-    TextClassificationRecord,
-    TokenClassificationRecord,
-)
-from argilla.datasets import TextClassificationSettings, TokenClassificationSettings
-
-os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+from argilla.client.datasets import DatasetForText2Text, DatasetForTextClassification, DatasetForTokenClassification
+from argilla.client.models import Framework, Text2TextRecord, TextClassificationRecord, TokenClassificationRecord
+from argilla.client.singleton import active_client
+from argilla.datasets import TextClassificationSettings, TokenClassificationSettings, load_dataset_settings
+from argilla.utils.telemetry import get_telemetry_client
 
 if TYPE_CHECKING:
     import spacy
+
+    from argilla.client.feedback.integrations.huggingface import FrameworkCardData
 
 
 class ArgillaTrainer(object):
     _logger = logging.getLogger("ArgillaTrainer")
     _logger.setLevel(logging.INFO)
+    _CLIENT = get_telemetry_client()
 
     def __init__(
         self,
@@ -46,6 +45,7 @@ class ArgillaTrainer(object):
         train_size: Optional[float] = None,
         seed: Optional[int] = None,
         gpu_id: Optional[int] = -1,
+        framework_kwargs: Optional[dict] = {},
         **load_kwargs: Optional[dict],
     ) -> None:
         """
@@ -70,10 +70,13 @@ class ArgillaTrainer(object):
                 the GPU ID to use when training a SpaCy model. Defaults to -1, which means that the CPU
                 will be used by default. GPU IDs start in 0, which stands for the default GPU in the system,
                 if available.
+            framework_kwargs (dict): additional arguments for the framework.
             **load_kwargs: arguments for the rg.load() function.
         """
+        argilla = active_client()
+
         self._name = name
-        self._workspace = workspace or rg.get_workspace()
+        self._workspace = workspace or argilla.get_workspace()
         self._multi_label = False
         self._split_applied = False
         self._train_size = train_size
@@ -83,30 +86,35 @@ class ArgillaTrainer(object):
         if train_size:
             self._split_applied = True
 
-        self.rg_dataset_snapshot = rg.load(name=self._name, limit=1, workspace=workspace)
+        _pytorch_fallback_env = "PYTORCH_ENABLE_MPS_FALLBACK"
+        if _pytorch_fallback_env not in os.environ:
+            os.environ[_pytorch_fallback_env] = "1"
+            warnings.warn(f"{_pytorch_fallback_env} not set. Setting it to 1.", UserWarning, stacklevel=2)
+
+        self.rg_dataset_snapshot = argilla.load(name=self._name, limit=1, workspace=workspace)
         if not len(self.rg_dataset_snapshot) > 0:
             raise ValueError(f"Dataset {self._name} is empty")
 
-        if isinstance(self.rg_dataset_snapshot, rg.DatasetForTextClassification):
-            self._rg_dataset_type = rg.DatasetForTextClassification
+        if isinstance(self.rg_dataset_snapshot, DatasetForTextClassification):
+            self._rg_dataset_type = DatasetForTextClassification
             self._multi_label = self.rg_dataset_snapshot[0].multi_label
-        elif isinstance(self.rg_dataset_snapshot, rg.DatasetForTokenClassification):
-            self._rg_dataset_type = rg.DatasetForTokenClassification
-        elif isinstance(self.rg_dataset_snapshot, rg.DatasetForText2Text):
-            self._rg_dataset_type = rg.DatasetForText2Text
+        elif isinstance(self.rg_dataset_snapshot, DatasetForTokenClassification):
+            self._rg_dataset_type = DatasetForTokenClassification
+        elif isinstance(self.rg_dataset_snapshot, DatasetForText2Text):
+            self._rg_dataset_type = DatasetForText2Text
         else:
             raise NotImplementedError(f"Dataset type {type(self.rg_dataset_snapshot)} is not supported.")
 
-        self.dataset_full = rg.load(name=self._name, **load_kwargs)
+        self.dataset_full = argilla.load(name=self._name, **load_kwargs)
 
         # settings for the dataset
-        self._settings = rg.load_dataset_settings(name=self._name, workspace=workspace)
-        if self._rg_dataset_type in [rg.DatasetForTextClassification, rg.DatasetForTokenClassification]:
+        self._settings = load_dataset_settings(name=self._name, workspace=workspace)
+        if self._rg_dataset_type in [DatasetForTextClassification, DatasetForTokenClassification]:
             if self._settings is None:
                 self._settings = self.dataset_full._infer_settings_from_records()
 
         framework = Framework(framework)
-        if framework is Framework.SPACY:
+        if framework in [Framework.SPACY, Framework.SPACY_TRANSFORMERS]:
             import spacy
 
             self.dataset_full_prepared = self.dataset_full.prepare_for_training(
@@ -125,8 +133,6 @@ class ArgillaTrainer(object):
             )
 
         if framework is Framework.SETFIT:
-            if self._rg_dataset_type is not rg.DatasetForTextClassification:
-                raise NotImplementedError(f"{Framework.SETFIT} only supports `TextClassification` tasks.")
             from argilla.training.setfit import ArgillaSetFitTrainer
 
             self._trainer = ArgillaSetFitTrainer(
@@ -152,25 +158,12 @@ class ArgillaTrainer(object):
                 seed=self._seed,
                 model=self.model,
             )
-        elif framework is Framework.AUTOTRAIN:
-            if self._rg_dataset_type is not rg.DatasetForTextClassification:
-                raise NotImplementedError(f"{Framework.AUTOTRAIN} only supports `TextClassification` tasks.")
-            from argilla.training.autotrain_advanced import ArgillaAutoTrainTrainer
-
-            self._trainer = ArgillaAutoTrainTrainer(
-                name=self._name,
-                workspace=self._workspace,
-                record_class=self._rg_dataset_type._RECORD_TYPE,
-                dataset=self.dataset_full_prepared,
-                multi_label=self._multi_label,
-                settings=self._settings,
-                seed=self._seed,
-                model=self.model,
-            )
         elif framework is Framework.PEFT:
             from argilla.training.peft import ArgillaPeftTrainer
 
             self._trainer = ArgillaPeftTrainer(
+                name=self._name,
+                workspace=self._workspace,
                 record_class=self._rg_dataset_type._RECORD_TYPE,
                 dataset=self.dataset_full_prepared,
                 multi_label=self._multi_label,
@@ -191,14 +184,26 @@ class ArgillaTrainer(object):
                 settings=self._settings,
                 seed=self._seed,
                 gpu_id=gpu_id,
+                **framework_kwargs,  # freeze_tok2vec
+            )
+        elif framework is Framework.SPACY_TRANSFORMERS:
+            from argilla.training.spacy import ArgillaSpaCyTransformersTrainer
+
+            self._trainer = ArgillaSpaCyTransformersTrainer(
+                name=self._name,
+                workspace=self._workspace,
+                record_class=self._rg_dataset_type._RECORD_TYPE,
+                dataset=self.dataset_full_prepared,
+                model=self.model,
+                multi_label=self._multi_label,
+                settings=self._settings,
+                seed=self._seed,
+                gpu_id=gpu_id,
+                **framework_kwargs,  # update_transformer
             )
         elif framework is Framework.OPENAI:
             from argilla.training.openai import ArgillaOpenAITrainer
 
-            if self._rg_dataset_type is rg.DatasetForTokenClassification:
-                raise NotImplementedError(f"{Framework.OPENAI} does not support `TokenClassification` tasks.")
-            elif self._rg_dataset_type is rg.DatasetForTextClassification and self._multi_label:
-                raise NotImplementedError(f"{Framework.OPENAI} does not support multi-label TextClassification tasks.")
             self._trainer = ArgillaOpenAITrainer(
                 name=self._name,
                 workspace=self._workspace,
@@ -210,7 +215,7 @@ class ArgillaTrainer(object):
                 seed=self._seed,
             )
         elif framework is Framework.SPAN_MARKER:
-            if self._rg_dataset_type is not rg.DatasetForTokenClassification:
+            if self._rg_dataset_type is not DatasetForTokenClassification:
                 raise NotImplementedError(f"{Framework.SPAN_MARKER} only supports `TokenClassification` tasks.")
             from argilla.training.span_marker import ArgillaSpanMarkerTrainer
 
@@ -226,6 +231,10 @@ class ArgillaTrainer(object):
             )
 
         self._logger.info(self)
+        self._track_trainer_usage(framework=framework, task=self._rg_dataset_type._RECORD_TYPE.__name__)
+
+    def _track_trainer_usage(self, framework: str, task: str):
+        self._CLIENT.track_data(action="ArgillaTrainerUsage", data={"framework": framework, "task": task})
 
     def __repr__(self) -> str:
         """
@@ -280,7 +289,7 @@ _________________________________________________________________
         """
         return self._trainer.predict(text=text, as_argilla_records=as_argilla_records, **kwargs)
 
-    def train(self, output_dir: str = None):
+    def train(self, output_dir: str):
         """
         `train` takes in a path to a file and trains the model. If a path is provided,
         the model is saved to that path.
@@ -299,6 +308,36 @@ _________________________________________________________________
         """
         self._trainer.save(output_dir)
 
+    def get_model_kwargs(self):
+        """
+        Returns the model kwargs.
+        """
+        return self._trainer.get_model_kwargs()
+
+    def get_trainer_kwargs(self):
+        """
+        Returns the training kwargs.
+        """
+        return self._trainer.get_trainer_kwargs()
+
+    def get_trainer_model(self):
+        """
+        Returns the trainer model.
+        """
+        return self._trainer.get_model()
+
+    def get_trainer_tokenizer(self):
+        """
+        Returns the trainer tokenizer.
+        """
+        return self._trainer.get_tokenizer()
+
+    def get_trainer(self):
+        """
+        Returns the trainer trainer.
+        """
+        return self._trainer.get_trainer()
+
 
 class ArgillaTrainerSkeleton(ABC):
     def __init__(
@@ -315,13 +354,26 @@ class ArgillaTrainerSkeleton(ABC):
         **kwargs,
     ):
         self._name = name
-        self._workspace = workspace or rg.get_workspace()
+        self._workspace = workspace or get_workspace()
         self._dataset = dataset
         self._record_class = record_class
         self._multi_label = multi_label
         self._settings = settings
+        if self._settings:
+            self._label2id = self._settings.label2id or None
+            self._id2label = self._settings.id2label
+            self._label_list = list(self._label2id.keys())
+        else:
+            self._label_list = None
+            self._label2id = None
+            self._id2label = None
         self._model = model
         self._seed = seed
+        self.model_kwargs = {}
+        self.trainer_kwargs = {}
+        self.trainer_model = None
+        self.trainer_tokenizer = None
+        self._trainer = None
 
     @abstractmethod
     def init_training_args(self):
@@ -358,3 +410,43 @@ class ArgillaTrainerSkeleton(ABC):
         """
         Saves the model to the specified path.
         """
+
+    def get_model_card_data(self, card_data_kwargs: Dict[str, Any]) -> "FrameworkCardData":
+        """
+        Generates a `FrameworkCardData` instance to generate a model card from.
+        """
+
+    def push_to_huggingface(self, repo_id: str, **kwargs) -> Optional[str]:
+        """
+        Uploads the model to [Huggingface Hub](https://huggingface.co/docs/hub/models-the-hub).
+        """
+
+    def get_model_kwargs(self):
+        """
+        Returns the model kwargs.
+        """
+        return self.model_kwargs
+
+    def get_trainer_kwargs(self):
+        """
+        Returns the training kwargs.
+        """
+        return self.trainer_kwargs
+
+    def get_model(self):
+        """
+        Returns the model.
+        """
+        return self._model
+
+    def get_tokenizer(self):
+        """
+        Returns the tokenizer.
+        """
+        return self.trainer_tokenizer
+
+    def get_trainer(self):
+        """
+        Returns the trainer.
+        """
+        return self._trainer

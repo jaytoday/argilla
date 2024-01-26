@@ -16,18 +16,28 @@ from collections import OrderedDict
 from sqlite3 import Connection as SQLite3Connection
 from typing import TYPE_CHECKING, Generator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import event, make_url
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-import argilla
+import argilla.server
 from argilla.server.settings import settings
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
+    from sqlalchemy.ext.asyncio import AsyncSession
 
-ALEMBIC_CONFIG_FILE = os.path.normpath(os.path.join(os.path.dirname(argilla.__file__), "alembic.ini"))
-TAGGED_REVISIONS = OrderedDict({"1.7": "1769ee58fbb4", "1.8": "ae5522b4c674"})
+
+ALEMBIC_CONFIG_FILE = os.path.normpath(os.path.join(os.path.dirname(argilla.server.__file__), "alembic.ini"))
+TAGGED_REVISIONS = OrderedDict(
+    {
+        "1.7": "1769ee58fbb4",
+        "1.8": "ae5522b4c674",
+        "1.11": "3ff6484f8b37",
+        "1.13": "1e629a913727",
+        "1.17": "84f6b9ff6076",
+        "1.18": "bda6fe24314e",
+    }
+)
 
 
 @event.listens_for(Engine, "connect")
@@ -38,17 +48,22 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor.close()
 
 
-engine = create_engine(settings.database_url)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+async_engine = create_async_engine(settings.database_url)
+AsyncSessionLocal = async_sessionmaker(autocommit=False, expire_on_commit=False, bind=async_engine)
 
 
-def get_db() -> Generator["Session", None, None]:
+async def get_async_db() -> Generator["AsyncSession", None, None]:
     try:
-        db = SessionLocal()
+        db: "AsyncSession" = AsyncSessionLocal()
         yield db
     finally:
-        db.close()
+        await db.close()
 
 
-class Base(DeclarativeBase):
-    pass
+def database_url_sync() -> str:
+    """
+    Returns a "sync" version of the configured database URL. This may be useful in cases we don't need
+    an asynchronous connection, like running database migration inside the alembic script.
+    """
+    database_url = make_url(settings.database_url)
+    return settings.database_url.replace(f"+{database_url.get_driver_name()}", "")

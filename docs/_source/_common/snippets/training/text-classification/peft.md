@@ -1,16 +1,16 @@
 ---
-title: Transformers
+title: Peft
 description: The ArgillaPeftTrainer leverages the base features of transformers and uses the Low Rank Adaptation (LoRA) implementation of Parameter Efficient Fine-Tuning (PEFT).
 links:
   - linkText: Argilla docs
-    linkLink: https://docs.argilla.io/en/latest/guides/train_a_model.html
+    linkLink: https://docs.argilla.io/en/practical_guides/fine_tune.html#text-classification
   - linkText: Transformers blog
     linkLink: https://huggingface.co/blog/peft
   - linkText: Transformers docss
     linkLink: https://huggingface.co/docs/peft/index
 ---
 
-*code snippet*
+_code snippet_
 
 ```python
 from argilla.training import ArgillaTrainer
@@ -26,7 +26,7 @@ trainer.train(output_dir="text-classification")
 records = trainer.predict("The ArgillaTrainer is great!", as_argilla_records=True)
 ```
 
-*update training config*
+_update training config_
 
 ```python
 # `peft.LoraConfig`

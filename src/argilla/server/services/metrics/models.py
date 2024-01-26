@@ -12,20 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from typing import (
-    Any,
-    ClassVar,
-    Dict,
-    Generic,
-    Iterable,
-    List,
-    Optional,
-    TypeVar,
-    Union,
-)
+from typing import Any, ClassVar, Dict, Generic, Iterable, List, Optional, TypeVar, Union
 
-from pydantic import BaseModel, Field
-
+from argilla.server.pydantic_v1 import BaseModel, Field
 from argilla.server.services.search.model import ServiceRecordsQuery
 from argilla.server.services.tasks.commons import ServiceRecord
 

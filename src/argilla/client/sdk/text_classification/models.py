@@ -15,11 +15,7 @@
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
-
-from argilla.client.models import (
-    TextClassificationRecord as ClientTextClassificationRecord,
-)
+from argilla.client.models import TextClassificationRecord as ClientTextClassificationRecord
 from argilla.client.models import TokenAttributions as ClientTokenAttributions
 from argilla.client.sdk.commons.models import (
     MACHINE_NAME,
@@ -31,6 +27,7 @@ from argilla.client.sdk.commons.models import (
     TaskStatus,
     UpdateDatasetRequest,
 )
+from argilla.pydantic_v1 import BaseModel, Field
 
 
 class ClassPrediction(BaseModel):
@@ -129,7 +126,6 @@ class TextClassificationQuery(BaseModel):
     ids: Optional[List[Union[str, int]]]
 
     query_text: str = Field(default=None)
-    advanced_query_dsl: bool = False
     metadata: Optional[Dict[str, Union[str, List[str]]]] = None
 
     predicted_as: List[str] = Field(default_factory=list)

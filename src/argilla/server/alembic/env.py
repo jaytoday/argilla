@@ -15,9 +15,9 @@
 from logging.config import fileConfig
 
 from alembic import context
-from argilla.server.database import Base
-from argilla.server.models.models import *  # noqa
-from argilla.server.settings import settings
+from argilla.server.database import database_url_sync
+from argilla.server.models.base import DatabaseModel
+from argilla.server.models.database import *  # noqa: I001
 from sqlalchemy import engine_from_config, pool
 
 # this is the Alembic Config object, which provides
@@ -25,7 +25,7 @@ from sqlalchemy import engine_from_config, pool
 config = context.config
 
 # Overwrites the SQLAlchemy URL getting it from argilla database_url settings
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option("sqlalchemy.url", database_url_sync())
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -36,7 +36,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = Base.metadata
+target_metadata = DatabaseModel.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

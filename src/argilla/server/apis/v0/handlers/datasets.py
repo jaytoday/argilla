@@ -16,7 +16,6 @@
 from typing import List
 
 from fastapi import APIRouter, Body, Depends, Security
-from pydantic import parse_obj_as
 
 from argilla.server.apis.v0.helpers import deprecate_endpoint
 from argilla.server.apis.v0.models.commons.params import (
@@ -25,12 +24,8 @@ from argilla.server.apis.v0.models.commons.params import (
 )
 from argilla.server.errors import EntityNotFoundError
 from argilla.server.models import User
-from argilla.server.schemas.datasets import (
-    CopyDatasetRequest,
-    CreateDatasetRequest,
-    Dataset,
-    UpdateDatasetRequest,
-)
+from argilla.server.pydantic_v1 import parse_obj_as
+from argilla.server.schemas.v0.datasets import CopyDatasetRequest, CreateDatasetRequest, Dataset, UpdateDatasetRequest
 from argilla.server.security import auth
 from argilla.server.services.datasets import DatasetsService
 
@@ -50,7 +45,7 @@ async def list_datasets(
     service: DatasetsService = Depends(DatasetsService.get_instance),
     current_user: User = Security(auth.get_current_user),
 ) -> List[Dataset]:
-    datasets = service.list(
+    datasets = await service.list(
         user=current_user,
         workspaces=[workspace_request.workspace] if workspace_request.workspace is not None else None,
     )
@@ -73,124 +68,79 @@ async def create_dataset(
     current_user: User = Security(auth.get_current_user),
 ) -> Dataset:
     request.workspace = request.workspace or ws_params.workspace
-    dataset = datasets.create_dataset(user=current_user, dataset=request)
-
+    dataset = await datasets.create_dataset(user=current_user, dataset=request)
     return Dataset.from_orm(dataset)
 
 
-@router.get(
-    "/{name}",
-    response_model=Dataset,
-    response_model_exclude_none=True,
-    operation_id="get_dataset",
-)
-def get_dataset(
+@router.get("/{name}", response_model=Dataset, response_model_exclude_none=True, operation_id="get_dataset")
+async def get_dataset(
     name: str,
     ds_params: CommonTaskHandlerDependencies = Depends(),
     service: DatasetsService = Depends(DatasetsService.get_instance),
     current_user: User = Security(auth.get_current_user),
 ) -> Dataset:
-    return Dataset.from_orm(
-        service.find_by_name(
-            user=current_user,
-            name=name,
-            workspace=ds_params.workspace,
-        )
-    )
+    return Dataset.from_orm(await service.find_by_name(user=current_user, name=name, workspace=ds_params.workspace))
 
 
-@router.patch(
-    "/{name}",
-    operation_id="update_dataset",
-    response_model=Dataset,
-    response_model_exclude_none=True,
-)
-def update_dataset(
+@router.patch("/{name}", operation_id="update_dataset", response_model=Dataset, response_model_exclude_none=True)
+async def update_dataset(
     name: str,
     request: UpdateDatasetRequest,
     ds_params: CommonTaskHandlerDependencies = Depends(),
     service: DatasetsService = Depends(DatasetsService.get_instance),
     current_user: User = Security(auth.get_current_user),
 ) -> Dataset:
-    found_ds = service.find_by_name(user=current_user, name=name, workspace=ds_params.workspace)
-
-    dataset = service.update(
-        user=current_user,
-        dataset=found_ds,
-        tags=request.tags,
-        metadata=request.metadata,
-    )
-
+    found_ds = await service.find_by_name(user=current_user, name=name, workspace=ds_params.workspace)
+    dataset = await service.update(user=current_user, dataset=found_ds, tags=request.tags, metadata=request.metadata)
     return Dataset.from_orm(dataset)
 
 
-@router.delete(
-    "/{name}",
-    operation_id="delete_dataset",
-)
-def delete_dataset(
+@router.delete("/{name}", operation_id="delete_dataset")
+async def delete_dataset(
     name: str,
     ds_params: CommonTaskHandlerDependencies = Depends(),
     service: DatasetsService = Depends(DatasetsService.get_instance),
     current_user: User = Security(auth.get_current_user),
 ):
     try:
-        found_ds = service.find_by_name(
-            user=current_user,
-            name=name,
-            workspace=ds_params.workspace,
-        )
-        service.delete(
-            user=current_user,
-            dataset=found_ds,
-        )
+        found_ds = await service.find_by_name(user=current_user, name=name, workspace=ds_params.workspace)
+        await service.delete(user=current_user, dataset=found_ds)
     except EntityNotFoundError:
         pass
 
 
-@router.put(
-    "/{name}:close",
-    operation_id="close_dataset",
-)
-def close_dataset(
+@router.put("/{name}:close", operation_id="close_dataset")
+async def close_dataset(
     name: str,
     ds_params: CommonTaskHandlerDependencies = Depends(),
     service: DatasetsService = Depends(DatasetsService.get_instance),
     current_user: User = Security(auth.get_current_user),
 ):
-    found_ds = service.find_by_name(user=current_user, name=name, workspace=ds_params.workspace)
-    service.close(user=current_user, dataset=found_ds)
+    found_ds = await service.find_by_name(user=current_user, name=name, workspace=ds_params.workspace)
+    await service.close(user=current_user, dataset=found_ds)
 
 
-@router.put(
-    "/{name}:open",
-    operation_id="open_dataset",
-)
-def open_dataset(
+@router.put("/{name}:open", operation_id="open_dataset")
+async def open_dataset(
     name: str,
     ds_params: CommonTaskHandlerDependencies = Depends(),
     service: DatasetsService = Depends(DatasetsService.get_instance),
     current_user: User = Security(auth.get_current_user),
 ):
-    found_ds = service.find_by_name(user=current_user, name=name, workspace=ds_params.workspace)
-    service.open(user=current_user, dataset=found_ds)
+    found_ds = await service.find_by_name(user=current_user, name=name, workspace=ds_params.workspace)
+    await service.open(user=current_user, dataset=found_ds)
 
 
-@router.put(
-    "/{name}:copy",
-    operation_id="copy_dataset",
-    response_model=Dataset,
-    response_model_exclude_none=True,
-)
-def copy_dataset(
+@router.put("/{name}:copy", operation_id="copy_dataset", response_model=Dataset, response_model_exclude_none=True)
+async def copy_dataset(
     name: str,
     copy_request: CopyDatasetRequest,
     ds_params: CommonTaskHandlerDependencies = Depends(),
     service: DatasetsService = Depends(DatasetsService.get_instance),
     current_user: User = Security(auth.get_current_user),
 ) -> Dataset:
-    found = service.find_by_name(user=current_user, name=name, workspace=ds_params.workspace)
-    dataset = service.copy_dataset(
+    found = await service.find_by_name(user=current_user, name=name, workspace=ds_params.workspace)
+    dataset = await service.copy_dataset(
         user=current_user,
         dataset=found,
         copy_name=copy_request.name,

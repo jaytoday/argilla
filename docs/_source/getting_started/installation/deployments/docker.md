@@ -5,8 +5,8 @@ This guide explains how to launch the Elasticsearch backend and Argilla Server u
 (setting-up-elasticsearch-via-docker)=
 ## Elasticsearch
 
-First, you need to create a network to make both standalone containers visibles between them.
-Just run the folowing command:
+First, you need to create a network to make both standalone containers visible between them.
+Just run the following command:
 ```bash
 docker network create argilla-net
 ```
@@ -34,16 +34,16 @@ docker start elasticsearch-for-argilla
 ```
 
 :::{warning}
-Keep in mind, if you remove your container with
+Keep in mind that if you remove your container with
 ```bash
 docker rm elasticsearch-for-argilla
 ```
-you will loose all your datasets in Argilla!
+you will lose all your datasets in Argilla!
 :::
 
 For more details about the ES installation with docker, see their [official documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.5/docker.html).
 Also, you can visit the [docs](https://www.elastic.co/guide/en/elasticsearch/reference/8.5/install-elasticsearch.html#elasticsearch-install-packages) for other
-platforms installation.
+platforms' installation.
 
 We recommend ES version 8.5.x to work with Argilla.
 
@@ -59,15 +59,15 @@ docker pull argilla/argilla-server
 Then simply run it.
 Keep in mind that you need a running Elasticsearch instance for Argilla to work.
 By default, the Argilla server will look for your Elasticsearch endpoint at `http://localhost:9200`.
-But you can customize this by setting the `ELASTICSEARCH` environment variable.
+But you can customize this by setting the `ARGILLA_ELASTICSEARCH` environment variable.
 
 
 
 ```bash
-docker run --network argilla-net -p 6900:6900 -e "ELASTICSEARCH=http://elasticsearch-for-argilla:9200" --name argilla argilla/argilla-server
+docker run --network argilla-net -p 6900:6900 -e "ARGILLA_ELASTICSEARCH=http://elasticsearch-for-argilla:9200" --name argilla argilla/argilla-server
 ```
 :::{note}
-By default, telemetry is enabled. This helps us to improve our product. For more info about the metrics and disabling them check [telemetry](../../reference/telemetry.md).
+By default, telemetry is enabled. This helps us to improve our product. For more info about the metrics and disabling them check [telemetry](/reference/telemetry.md).
 
 :::
 

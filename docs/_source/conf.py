@@ -56,6 +56,7 @@ except:
     version = ""
     release = ""
 
+
 # -- General configuration ---------------------------------------------------
 
 # Add any Sphinx extension module names here, as strings. They can be
@@ -93,7 +94,8 @@ services:
    ports:
      - "80:80"
    environment:
-     ELASTICSEARCH: <elasticsearch-host_and_port>
+     ARGILLA_ELASTICSEARCH: <elasticsearch-host_and_port>
+     ARGILLA_LOCAL_AUTH_SECRET_KEY: Please generate a 32 character random string with: openssl rand -hex 32
    restart: unless-stopped
 ```""".format(
     myst_substitutions["dockertag"]
@@ -108,7 +110,8 @@ services:
     ports:
       - "6900:80"
     environment:
-      ELASTICSEARCH: http://elasticsearch:9200
+      ARGILLA_ELASTICSEARCH: http://elasticsearch:9200
+      ARGILLA_LOCAL_AUTH_SECRET_KEY: Please generate a 32 character random string with: openssl rand -hex 32
       ARGILLA_LOCAL_AUTH_USERS_DB_FILE: /config/.users.yaml
 
     volumes:
@@ -126,10 +129,31 @@ nbsphinx_execute = "never"
 getting_started_html = open("./_common/getting_started.html", "r", encoding="utf8").read()
 next_steps_html = open("./_common/next_steps.html", "r", encoding="utf8").read()
 
-# Plotly + Hide input/output prompts (cell counts)
-
-
+# -- AUTODOC IMPORT MOCKS ---------------------------------------------------
 autodoc_typehints = "description"
+autodoc_mock_imports = [
+    "cleanlab",
+    "datasets",
+    "huggingface_hub",
+    "flair",
+    "faiss",
+    "flyingsquid",
+    "pgmpy",
+    "plotly",
+    "snorkel",
+    "spacy",
+    "spacy_transformers",
+    "sentence_transformers",
+    "torch",
+    "transformers",
+    "evaluate",
+    "seqeval",
+    "setfit",
+    "span_marker",
+    "openai",
+    "peft",
+    "trl",
+]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -140,7 +164,7 @@ templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 if not os.getenv("READTHEDOCS"):
-    notfound_urls_prefix = None
+    notfound_urls_prefix = ""
 else:
     lang, docs_version = (
         os.getenv("READTHEDOCS_LANGUAGE", "en"),
@@ -330,7 +354,7 @@ pygments_dark_style = "material"
 
 
 # Open graph meta
-ogp_image = "_static/images/og-doc.png"
+ogp_image = "https://docs.argilla.io/en/latest/_static/images/og-doc.png"
 
 ogp_custom_meta_tags = [
     '<meta name="twitter:card" content="summary_large_image" />',

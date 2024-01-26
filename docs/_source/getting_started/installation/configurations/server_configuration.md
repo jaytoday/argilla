@@ -4,14 +4,32 @@ This section explains advanced operations and settings for running the Argilla S
 
 By default, the Argilla Server will look for your Elasticsearch (ES) endpoint at `http://localhost:9200`. You can customize this by setting the `ARGILLA_ELASTICSEARCH` environment variable. Have a look at the list of available [environment variables](#environment-variables) to further configure the Argilla server.
 
+From the Argilla version `1.19.0`, you must set up the search engine manually to work with Feedback datasets. You should set the
+environment variable `ARGILLA_SEARCH_ENGINE=opensearch` or `ARGILLA_SEARCH_ENGINE=elasticsearch` depending on the backend you're using
+The default value for this variable is set to `elasticsearch`. The minimal version for Elasticsearch is `8.5.0`, and for Opensearch is `2.4.0`.
+Please, review your backend and upgrade it if necessary.
+
+:::{warning}
+For vector search in OpenSearch, the filtering applied is using a `post_filter` step, since there is a bug that makes queries fail using filtering + knn from Argilla.
+See https://github.com/opensearch-project/k-NN/issues/1286
+
+This may result in unexpected results when combining filtering with vector search with this engine.
+:::
+
 ## Launching
+
 ### Using a proxy
 
-If you run argilla behind a proxy by adding some extra prefix to expose the service, you should setup the `ARGILLA_BASE_URL`
-environment variable to properly route requests to server application.
+If you run Argilla behind a proxy by adding some extra prefix to expose the service, you should set the `ARGILLA_BASE_URL`
+environment variable to properly route requests to the server application.
 
-For example, if your proxy exposes argilla in the URL `https://my-proxy/custom-path-for-argilla`,  you should launch the
-argilla server with `ARGILLA_BASE_URL=/custom-path-for-argilla`.
+For example, if your proxy exposes Argilla in the URL `https://my-proxy/custom-path-for-argilla`, you should launch the
+Argilla server with `ARGILLA_BASE_URL=/custom-path-for-argilla`.
+
+NGINX and Traefik have been tested and are known to work with Argilla:
+
+- [NGINX example](https://github.com/argilla-io/argilla/tree/main/docker/nginx)
+- [Traefik example](https://github.com/argilla-io/argilla/tree/main/docker/traefik)
 
 ### with `uvicorn`
 
@@ -22,27 +40,41 @@ uvicorn argilla:app
 ```
 
 :::{note}
-For more details about fastapi and uvicorn, see [here](https://fastapi.tiangolo.com/deployment/manually/#run-a-server-manually-uvicorn).
+For more details about FastAPI and uvicorn, see [here](https://fastapi.tiangolo.com/deployment/manually/#run-a-server-manually-uvicorn).
 :::
 
 
 ## Environment variables
 
-You can set following environment variables to further configure your server and client.
+You can set the following environment variables to further configure your server and client.
 
 ### Server
 
-- `ARGILLA_HOME_PATH`: The directory where Argilla will store all the files needed to run. If the path doesn't exists it will be automatically created (Default: `~/.argilla`).
+#### FastAPI
+
+- `ARGILLA_HOME_PATH`: The directory where Argilla will store all the files needed to run. If the path doesn't exist it will be automatically created (Default: `~/.argilla`).
+
+- `ARGILLA_BASE_URL`: If you want to launch the Argilla server in a specific base path other than /, you should set up this environment variable. This can be useful when running Argilla behind a proxy that adds a prefix path to route the service (Default: "/").
+
+- `ARGILLA_CORS_ORIGINS`: List of host patterns for CORS origin access.
+
+- `ARGILLA_DOCS_ENABLED`: If False, disables openapi docs endpoint at */api/docs*.
+
+- `ARGILLA_ENABLE_TELEMETRY`: If False, disables telemetry for usage metrics.
+
+#### SQLite and PostgreSQL
 
 - `ARGILLA_DATABASE_URL`: A URL string that contains the necessary information to connect to a database. Argilla uses SQLite by default, PostgreSQL is also officially supported (Default: `sqlite:///$ARGILLA_HOME_PATH/argilla.db?check_same_thread=False`).
 
+#### Elasticsearch and Opensearch
+
 - `ARGILLA_ELASTICSEARCH`: URL of the connection endpoint of the Elasticsearch instance (Default: `http://localhost:9200`).
 
-- `ARGILLA_ELASTICSEARCH_SSL_VERIFY`: If "False", disables SSL certificate verification when connection to the Elasticsearch backend.
+- `ARGILA_SEARCH_ENGINE`: (Only for Feedback datasets) Search engine to use. Valid values are "elasticsearch" and "opensearch" (Default: "elasticsearch").
+
+- `ARGILLA_ELASTICSEARCH_SSL_VERIFY`: If "False", disables SSL certificate verification when connecting to the Elasticsearch backend.
 
 - `ARGILLA_ELASTICSEARCH_CA_PATH`: Path to CA cert for ES host. For example: `/full/path/to/root-ca.pem` (Optional)
-
-- `ARGILLA_BASE_URL`: If you want to launch the argilla server in an specific base path other than /, you should setup this environment variable. This can be useful when running argilla behind a proxy that adds a prefix path to route the service (Default: "/").
 
 - `ARGILLA_NAMESPACE`: A prefix used to manage Elasticsearch indices. You can use this namespace to use the same Elasticsearch instance for several independent Argilla instances.
 
@@ -53,13 +85,6 @@ You can set following environment variables to further configure your server and
 - `ARGILLA_METADATA_FIELDS_LIMIT`: Max number of fields in the metadata (Default: 50, max: 100).
 
 - `ARGILLA_METADATA_FIELD_LENGTH`: Max length supported for the string metadata fields. Higher values will be truncated. Abusing this may lead to Elastic performance issues (Default: 128).
-
-- `CORS_ORIGINS`: List of host patterns for CORS origin access.
-
-- `DOCS_ENABLED`: If False, disables openapi docs endpoint at */api/docs*.
-
-- `ARGILLA_ENABLE_TELEMETRY`: If False, disables telemetry for usage metrics.
-
 
 ### Client
 

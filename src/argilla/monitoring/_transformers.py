@@ -15,12 +15,11 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from pydantic import BaseModel
-
-from argilla import TextClassificationRecord
 from argilla.client.api import Api
+from argilla.client.models import TextClassificationRecord
 from argilla.monitoring.base import BaseMonitor
 from argilla.monitoring.types import MissingType
+from argilla.pydantic_v1 import BaseModel
 
 try:
     from transformers import (
@@ -173,11 +172,7 @@ class TextClassificationMonitor(HuggingFaceMonitor):
 
 
 def huggingface_monitor(
-    pl: Pipeline,
-    api: Api,
-    dataset: str,
-    sample_rate: float,
-    log_interval: float,
+    pl: Pipeline, api: Api, dataset: str, sample_rate: float, log_interval: float
 ) -> Optional[Pipeline]:
     if isinstance(pl, TextClassificationPipeline):
         return TextClassificationMonitor(

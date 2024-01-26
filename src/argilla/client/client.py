@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-
 import logging
 import os
 import re
@@ -27,9 +26,12 @@ from rich import print as rprint
 from rich.progress import Progress
 
 from argilla._constants import (
+    DATASET_NAME_REGEX_PATTERN,
     DEFAULT_API_KEY,
-    ES_INDEX_REGEX_PATTERN,
+    DEFAULT_API_URL,
+    DEFAULT_USERNAME,
     WORKSPACE_HEADER_NAME,
+    WORKSPACE_NAME_REGEX_PATTERN,
 )
 from argilla.client.apis.datasets import Datasets
 from argilla.client.apis.metrics import MetricsAPI
@@ -51,13 +53,10 @@ from argilla.client.models import (
 )
 from argilla.client.sdk.client import AuthenticatedClient
 from argilla.client.sdk.commons.api import bulk
-from argilla.client.sdk.commons.errors import (
-    AlreadyExistsApiError,
-    InputValueError,
-    NotFoundApiError,
-)
+from argilla.client.sdk.commons.errors import AlreadyExistsApiError, InputValueError, NotFoundApiError
 from argilla.client.sdk.datasets import api as datasets_api
 from argilla.client.sdk.datasets.models import CopyDatasetRequest, TaskType
+from argilla.client.sdk.datasets.models import Dataset as DatasetModel
 from argilla.client.sdk.metrics import api as metrics_api
 from argilla.client.sdk.metrics.models import MetricInfo
 from argilla.client.sdk.text2text.models import (
@@ -85,9 +84,8 @@ from argilla.client.sdk.token_classification.models import (
     TokenClassificationRecord as SdkTokenClassificationRecord,
 )
 from argilla.client.sdk.users import api as users_api
-from argilla.client.sdk.users.models import User
-from argilla.client.sdk.workspaces import api as workspaces_api
-from argilla.client.sdk.workspaces.models import WorkspaceModel
+from argilla.client.sdk.v1.workspaces import api as workspaces_api_v1
+from argilla.client.sdk.v1.workspaces.models import WorkspaceModel
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -107,26 +105,52 @@ class Argilla:
         workspace: Optional[str] = None,
         timeout: int = 120,
         extra_headers: Optional[Dict[str, str]] = None,
+        httpx_extra_kwargs: Optional[Dict[str, Any]] = None,
     ):
         """
+        Inits `Argilla` instance.
+
+        If called with `api_url=None` and `api_key=None` and no values have been set for the environment variables
+        `ARGILLA_API_URL` and `ARGILLA_API_KEY`, then the local credentials stored by a previous call to `argilla login`
+        command will be used. If local credentials are not found, then `api_url` and `api_key` will fallback to the
+        default values.
 
         Args:
             api_url: Address of the REST API. If `None` (default) and the env variable ``ARGILLA_API_URL`` is not set,
                 it will default to `http://localhost:6900`.
-            api_key: Authentification key for the REST API. If `None` (default) and the env variable ``ARGILLA_API_KEY``
+            api_key: Authentication key for the REST API. If `None` (default) and the env variable ``ARGILLA_API_KEY``
                 is not set, it will default to `argilla.apikey`.
             workspace: The workspace to which records will be logged/loaded. If `None` (default) and the
                 env variable ``ARGILLA_WORKSPACE`` is not set, it will default to the private user workspace.
             timeout: Wait `timeout` seconds for the connection to timeout. Default: 60.
             extra_headers: Extra HTTP headers sent to the server. You can use this to customize
                 the headers of argilla client requests, like additional security restrictions. Default: `None`.
-
+            httpx_extra_kwargs: Extra kwargs passed to the `httpx.Client` constructor. For more information about the
+                available arguments, see https://www.python-httpx.org/api/#client. Defaults to `None`.
         """
-        api_url = api_url or os.getenv("ARGILLA_API_URL", "http://localhost:6900")
+        from argilla.client.login import ArgillaCredentials
+
+        api_url = api_url or os.getenv("ARGILLA_API_URL")
+        api_key = api_key or os.getenv("ARGILLA_API_KEY")
+        workspace = workspace or os.getenv("ARGILLA_WORKSPACE")
+        extra_headers = extra_headers or {}
+
+        if api_url is None and api_key is None:
+            try:
+                credentials = ArgillaCredentials.load()
+                api_url = credentials.api_url
+                api_key = credentials.api_key
+                if not workspace:
+                    workspace = credentials.workspace
+                extra_headers = credentials.extra_headers
+            except FileNotFoundError:
+                pass
+
+        api_url = api_url or DEFAULT_API_URL
+        api_key = api_key or DEFAULT_API_KEY
+
         # Checking that the api_url does not end in '/'
         api_url = re.sub(r"\/$", "", api_url)
-        api_key = api_key or os.getenv("ARGILLA_API_KEY", DEFAULT_API_KEY)
-        workspace = workspace or os.getenv("ARGILLA_WORKSPACE")
         headers = extra_headers or {}
 
         self._client: AuthenticatedClient = AuthenticatedClient(
@@ -134,10 +158,29 @@ class Argilla:
             token=api_key,
             timeout=timeout,
             headers=headers.copy(),
+            httpx_extra_kwargs=httpx_extra_kwargs,
         )
 
-        self._user: User = users_api.whoami(client=self._client)
-        self.set_workspace(workspace or self._user.username)
+        self._user = users_api.whoami(client=self.http_client)  # .parsed
+
+        if not workspace and self._user.username == DEFAULT_USERNAME and DEFAULT_USERNAME in self._user.workspaces:
+            warnings.warn(
+                "Default user was detected and no workspace configuration was provided,"
+                f" so the default {DEFAULT_USERNAME!r} workspace will be used. If you"
+                " want to setup another workspace, use the `rg.set_workspace` function"
+                " or provide a different one on `rg.init`",
+                category=UserWarning,
+            )
+            workspace = DEFAULT_USERNAME
+        if workspace:
+            self.set_workspace(workspace or self._user.username)
+        else:
+            warnings.warn(
+                "No workspace configuration was detected. To work with Argilla"
+                " datasets, specify a valid workspace name on `rg.init` or set it"
+                " up through the `rg.set_workspace` function.",
+                category=UserWarning,
+            )
 
         self._check_argilla_versions()
 
@@ -179,12 +222,12 @@ class Argilla:
     @property
     def datasets(self) -> Datasets:
         """Datasets API primitives"""
-        return Datasets(client=self._client)
+        return Datasets(client=self.http_client)
 
     @property
     def search(self):
         """Search API primitives"""
-        return Search(client=self._client)
+        return Search(client=self.http_client)
 
     @property
     def metrics(self):
@@ -205,39 +248,54 @@ class Argilla:
         if not workspace:
             raise Exception("Must provide a workspace")
 
-        if not re.match(ES_INDEX_REGEX_PATTERN, workspace):
+        if not re.match(WORKSPACE_NAME_REGEX_PATTERN, workspace):
             raise InputValueError(
                 f"Provided workspace name {workspace} does not match the pattern"
-                f" {ES_INDEX_REGEX_PATTERN}. Please, use a valid name for your"
+                f" {WORKSPACE_NAME_REGEX_PATTERN}. Please, use a valid name for your"
                 " workspace. This limitation is caused by naming conventions for indexes"
                 " in Elasticsearch. If applicable, you can try to lowercase the name of your workspace."
                 " https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-create-index.html"
             )
 
         if workspace != self.get_workspace():
-            if workspace == self.user.username or (self.user.workspaces and workspace in self.user.workspaces):
-                self._client.headers[WORKSPACE_HEADER_NAME] = workspace
+            if workspace in [ws.name for ws in self.list_workspaces()]:
+                self.http_client.update_headers({WORKSPACE_HEADER_NAME: workspace})
             else:
-                raise Exception(f"Wrong provided workspace {workspace}")
+                raise ValueError(f"Wrong provided workspace {workspace!r}")
 
-    def get_workspace(self) -> str:
+    def get_workspace(self) -> Optional[str]:
         """Returns the name of the active workspace.
 
         Returns:
             The name of the active workspace as a string.
         """
-        return self._client.headers.get(WORKSPACE_HEADER_NAME)
+        return self.http_client.headers.get(WORKSPACE_HEADER_NAME)
 
     def list_workspaces(self) -> List[WorkspaceModel]:
-        """Lists all the availble workspaces for the current user.
+        """Lists all the available workspaces for the current user.
 
         Returns:
             A list of `WorkspaceModel` objects, containing the workspace
             attributes: name, id, created_at, and updated_at.
         """
-        return workspaces_api.list_workspaces(client=self._client.httpx).parsed
+        return workspaces_api_v1.list_workspaces_me(client=self.http_client.httpx).parsed
 
-    def copy(self, dataset: str, name_of_copy: str, workspace: str = None):
+    def list_datasets(self, workspace: Optional[str] = None) -> List[DatasetModel]:
+        """Lists all the available datasets for the current user in Argilla.
+
+        Args:
+            workspace: If provided, list datasets from that workspace only. Note that
+                the workspace must exist in advance, otherwise a HTTP 400 error will be
+                raised.
+
+        Returns:
+            A list of `DatasetModel` objects, containing the dataset
+            attributes: tags, metadata, name, id, task, owner, workspace, created_at,
+            and last_updated.
+        """
+        return datasets_api.list_datasets(client=self.http_client, workspace=workspace).parsed
+
+    def copy(self, dataset: str, name_of_copy: str, workspace: Optional[str] = None) -> None:
         """Creates a copy of a dataset including its tags and metadata
 
         Args:
@@ -247,10 +305,24 @@ class Argilla:
 
         """
         datasets_api.copy_dataset(
-            client=self._client,
+            client=self.http_client,
             name=dataset,
             json_body=CopyDatasetRequest(name=name_of_copy, target_workspace=workspace),
         )
+
+    def get_dataset(self, name: str, workspace: Optional[str] = None) -> DatasetModel:
+        """Gets a dataset by name.
+
+        Args:
+            name: The dataset name.
+            workspace: If provided, dataset will be retrieved from that workspace. Otherwise, the active workspace will
+                be used.
+
+        Returns:
+            A `Dataset` object containing the dataset information.
+        """
+        response = datasets_api.get_dataset(client=self.http_client, name=name, workspace=workspace)
+        return response.parsed
 
     def delete(self, name: str, workspace: Optional[str] = None):
         """Deletes a dataset.
@@ -261,7 +333,7 @@ class Argilla:
         if workspace is not None:
             self.set_workspace(workspace)
 
-        datasets_api.delete_dataset(client=self._client, name=name)
+        datasets_api.delete_dataset(client=self.http_client, name=name)
 
     def log(
         self,
@@ -330,10 +402,10 @@ class Argilla:
         if not name:
             raise InputValueError("Empty dataset name has been passed as argument.")
 
-        if not re.match(ES_INDEX_REGEX_PATTERN, name):
+        if not re.match(DATASET_NAME_REGEX_PATTERN, name):
             raise InputValueError(
                 f"Provided dataset name {name} does not match the pattern"
-                f" {ES_INDEX_REGEX_PATTERN}. Please, use a valid name for your"
+                f" {DATASET_NAME_REGEX_PATTERN}. Please, use a valid name for your"
                 " dataset. This limitation is caused by naming conventions for indexes"
                 " in Elasticsearch."
                 " https://www.elastic.co/guide/en/elasticsearch/reference/current/indices-create-index.html"
@@ -348,7 +420,7 @@ class Argilla:
             batch_size = chunk_size
 
         if batch_size > self._MAX_BATCH_SIZE:
-            _LOGGER.warning(
+            warnings.warn(
                 "The requested batch size is noticeably large, timeout errors may occur. "
                 f"Consider a batch size smaller than {self._MAX_BATCH_SIZE}",
             )
@@ -365,14 +437,22 @@ class Argilla:
         if record_type is TextClassificationRecord:
             bulk_class = TextClassificationBulkData
             creation_class = CreationTextClassificationRecord
+            task = TaskType.text_classification
         elif record_type is TokenClassificationRecord:
             bulk_class = TokenClassificationBulkData
             creation_class = CreationTokenClassificationRecord
+            task = TaskType.token_classification
         elif record_type is Text2TextRecord:
             bulk_class = Text2TextBulkData
             creation_class = CreationText2TextRecord
+            task = TaskType.text2text
         else:
             raise InputValueError(f"Unknown record type {record_type}. Available values are {Record.__args__}")
+
+        try:
+            self.datasets.create(name=name, task=task, workspace=workspace)
+        except AlreadyExistsApiError:
+            pass
 
         results = []
         with Progress() as progress_bar:
@@ -390,7 +470,7 @@ class Argilla:
                 batch_id, batch = batch_info
 
                 bulk_result = bulk(
-                    client=self._client,
+                    client=self.http_client,
                     name=name,
                     json_body=bulk_class(
                         tags=tags, metadata=metadata, records=[creation_class.from_client(r) for r in batch]
@@ -415,7 +495,7 @@ class Argilla:
             workspace = self.get_workspace()
             if not workspace:  # Just for backward comp. with datasets with no workspaces
                 workspace = "-"
-            url = f"{self._client.base_url}/datasets/{workspace}/{name}"
+            url = f"{self.http_client.base_url}/datasets/{workspace}/{name}"
             rprint(f"{processed} records logged to [link={url}]{url}[/link]")
 
         # Creating a composite BulkResponse with the total processed and failed
@@ -435,7 +515,7 @@ class Argilla:
         Args:
             name: The dataset name.
             query: An ElasticSearch query with the `query string syntax
-                <https://docs.argilla.io/en/latest/guides/query_datasets.html>`_
+                <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
             ids: If provided, deletes dataset records with given ids.
             discard_only: If `True`, matched records won't be deleted. Instead, they will be marked as `Discarded`
             discard_when_forbidden: Only super-user or dataset creator can delete records from a dataset.
@@ -480,7 +560,7 @@ class Argilla:
         Args:
             name: The dataset name.
             query: An ElasticSearch query with the `query string
-                syntax <https://argilla.readthedocs.io/en/stable/guides/queries.html>`_
+                syntax <https://docs.argilla.io/en/latesthttps://docs.argilla.io/en/latest/practical_guides/filter_dataset.html.html>`_
             vector: Vector configuration for a semantic search
             ids: If provided, load dataset records with given ids.
             limit: The number of records to retrieve.
@@ -532,8 +612,8 @@ class Argilla:
         )
 
     def dataset_metrics(self, name: str) -> List[MetricInfo]:
-        response = datasets_api.get_dataset(self._client, name)
-        response = metrics_api.get_dataset_metrics(self._client, name=name, task=response.parsed.task)
+        response = datasets_api.get_dataset(self.http_client, name)
+        response = metrics_api.get_dataset_metrics(self.http_client, name=name, task=response.parsed.task)
 
         return response.parsed
 
@@ -551,13 +631,13 @@ class Argilla:
         interval: Optional[float] = None,
         size: Optional[int] = None,
     ) -> MetricResults:
-        response = datasets_api.get_dataset(self._client, name)
+        response = datasets_api.get_dataset(self.http_client, name)
 
         metric_ = self.get_metric(name, metric=metric)
         assert metric_ is not None, f"Metric {metric} not found !!!"
 
         response = metrics_api.compute_metric(
-            self._client,
+            self.http_client,
             name=name,
             task=response.parsed.task,
             metric=metric,
@@ -573,7 +653,7 @@ class Argilla:
         for rule in rules:
             try:
                 text_classification_api.add_dataset_labeling_rule(
-                    self._client,
+                    self.http_client,
                     name=dataset,
                     rule=rule,
                 )
@@ -591,34 +671,34 @@ class Argilla:
         for rule in rules:
             try:
                 text_classification_api.update_dataset_labeling_rule(
-                    self._client,
+                    self.http_client,
                     name=dataset,
                     rule=rule,
                 )
             except NotFoundApiError:
                 _LOGGER.info(f"Rule {rule} does not exists, creating...")
-                text_classification_api.add_dataset_labeling_rule(self._client, name=dataset, rule=rule)
+                text_classification_api.add_dataset_labeling_rule(self.http_client, name=dataset, rule=rule)
             except Exception as ex:
                 _LOGGER.warning(f"Cannot update rule {rule}: {ex}")
 
     def delete_dataset_labeling_rules(self, dataset: str, rules: List[LabelingRule]):
         for rule in rules:
             try:
-                text_classification_api.delete_dataset_labeling_rule(self._client, name=dataset, rule=rule)
+                text_classification_api.delete_dataset_labeling_rule(self.http_client, name=dataset, rule=rule)
             except Exception as ex:
                 _LOGGER.warning(f"Cannot delete rule {rule}: {ex}")
         """Deletes the dataset labeling rules"""
         for rule in rules:
-            text_classification_api.delete_dataset_labeling_rule(self._client, name=dataset, rule=rule)
+            text_classification_api.delete_dataset_labeling_rule(self.http_client, name=dataset, rule=rule)
 
     def fetch_dataset_labeling_rules(self, dataset: str) -> List[LabelingRule]:
-        response = text_classification_api.fetch_dataset_labeling_rules(self._client, name=dataset)
+        response = text_classification_api.fetch_dataset_labeling_rules(self.http_client, name=dataset)
 
         return [LabelingRule.parse_obj(data) for data in response.parsed]
 
     def rule_metrics_for_dataset(self, dataset: str, rule: LabelingRule) -> LabelingRuleMetricsSummary:
         response = text_classification_api.dataset_rule_metrics(
-            self._client, name=dataset, query=rule.query, label=rule.label
+            self.http_client, name=dataset, query=rule.query, label=rule.label
         )
 
         return LabelingRuleMetricsSummary.parse_obj(response.parsed)

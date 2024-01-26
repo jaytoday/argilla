@@ -1,4 +1,4 @@
-We support different tasks within the Argilla eco-system focused on NLP: `Text Classification`, `Token Classification`, `Text2Text` and LLM-related `Feedback`. To know more about creation, take a look [here](/guides/log_load_and_prepare_data).
+We support different tasks within the Argilla eco-system focused on NLP: `Text Classification`, `Token Classification`, `Text2Text` and LLM-related `Feedback`. To know more about creation, take a look [here](/practical_guides/create_update_dataset/create_dataset.md).
 
 
 ::::{tab-set}
@@ -13,11 +13,12 @@ record = rg.FeedbackRecord(
         "question": "Why can camels survive long without water?",
         "answer": "Camels use the fat in their humps to keep them filled with energy and hydration for long periods of time."
     },
+    metadata={"source": "encyclopedia"},
     external_id='rec_1'
 )
 ```
 
-![text2text_record](../../_static/images/llms/feedback-record.jpeg)
+![text2text_record](/_static/images/llms/feedback-record.jpeg)
 :::
 
 
@@ -33,7 +34,7 @@ rec = rg.TextClassificationRecord(
 )
 rg.log(records=rec, name="my_dataset")
 ```
-![single_textclass_record](../../_static/reference/webapp/features-single_textclass_record.png)
+![single_textclass_record](/_static/reference/webapp/features-single_textclass_record.png)
 :::
 
 :::{tab-item} Text Classification (multi-label)
@@ -48,7 +49,7 @@ rec = rg.TextClassificationRecord(
 )
 rg.log(records=rec, name="my_dataset")
 ```
-![multi_textclass_record](../../_static/reference/webapp/features-multi_textclass_record.png)
+![multi_textclass_record](/_static/reference/webapp/features-multi_textclass_record.png)
 :::
 
 
@@ -64,7 +65,7 @@ record = rg.TokenClassificationRecord(
 )
 rg.log(records=rec, name="my_dataset")
 ```
-![tokclass_record](../../_static/reference/webapp/features-tokclass_record.png)
+![tokclass_record](/_static/reference/webapp/features-tokclass_record.png)
 :::
 
 :::{tab-item} Text2Text
@@ -78,7 +79,7 @@ record = rg.Text2TextRecord(
 rg.log(records=rec, name="my_dataset")
 ```
 
-![text2text_record](../../_static/reference/webapp/features-text2text_record.png)
+![text2text_record](/_static/reference/webapp/features-text2text_record.png)
 :::
 
 ::::

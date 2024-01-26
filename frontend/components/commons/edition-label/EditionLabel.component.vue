@@ -1,7 +1,7 @@
 <template>
   <div class="wrapper">
     <div class="header">
-      <h2 class="--heading5 --semibold description__title" v-html="title" />
+      <h2 class="--heading5 --medium description__title" v-html="title" />
     </div>
     <div class="content">
       <BaseSpinner v-if="isLoading" />
@@ -76,7 +76,7 @@ export default {
       saveLabelsButtonLabel: "Save labels",
       inputForSaveSchemaFeedback: {
         message: `Action needed: Save labels to validate the annotation schema. More in
-            <a target='_blank' href='https://docs.argilla.io/en/latest/guides/log_load_and_prepare_data.html#Define-a-labeling-schema'>
+            <a target='_blank' href='${this.$config.documentationSiteLabelScheme}'>
               docs</a>.
           `,
         buttonLabels: [{ label: "Save labels", value: "SAVE_LABEL_SCHEMA" }],

@@ -3,7 +3,6 @@
     <BaseBreadcrumbs
       v-if="breadcrumbs"
       :breadcrumbs="breadcrumbs"
-      :copy-button="copyButton"
       @breadcrumb-action="$emit('breadcrumb-action', $event)"
     />
     <DatasetSettingsIcon
@@ -11,7 +10,7 @@
       :datasetId="datasetId"
       @click-settings-icon="goToSettings()"
     />
-    <user />
+    <user-avatar-tooltip />
   </BaseTopbarBrand>
 </template>
 
@@ -20,11 +19,6 @@ import { getDatasetModelPrimaryKey } from "@/models/Dataset";
 
 export default {
   name: "HeaderComponent",
-  data() {
-    return {
-      copyButton: false,
-    };
-  },
   computed: {
     datasetId() {
       return getDatasetModelPrimaryKey({
@@ -42,7 +36,7 @@ export default {
       return [
         { link: { name: "datasets" }, name: "Home" },
         {
-          link: { path: `/datasets?workspace=${this.workspace}` },
+          link: { path: `/datasets?workspaces=${this.workspace}` },
           name: this.workspace,
         },
         {

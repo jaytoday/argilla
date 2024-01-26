@@ -17,14 +17,13 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, Field
+from argilla.pydantic_v1 import BaseModel, Field
 
 
 class TaskType(str, Enum):
     text_classification = "TextClassification"
     token_classification = "TokenClassification"
     text2text = "Text2Text"
-    multi_task_text_token_classification = "MultitaskTextTokenClassification"
 
     @classmethod
     def _missing_(cls, value):
@@ -42,7 +41,6 @@ class BaseDatasetModel(BaseModel):
 class Dataset(BaseDatasetModel):
     id: str
     task: TaskType
-    owner: str = None
     workspace: str = None
     created_at: datetime = None
     last_updated: datetime = None

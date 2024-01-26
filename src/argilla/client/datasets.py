@@ -12,18 +12,15 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-import logging
 import random
 import uuid
+import warnings
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type, Union
 
 import pandas as pd
 
 from argilla._constants import OPENAI_END_TOKEN, OPENAI_SEPARATOR, OPENAI_WHITESPACE
-from argilla.client.apis.datasets import (
-    TextClassificationSettings,
-    TokenClassificationSettings,
-)
+from argilla.client.apis.datasets import TextClassificationSettings, TokenClassificationSettings
 from argilla.client.models import (
     Framework,
     Record,
@@ -33,15 +30,13 @@ from argilla.client.models import (
     TokenClassificationRecord,
 )
 from argilla.client.sdk.datasets.models import TaskType
-from argilla.utils.dependency import require_version, requires_version
+from argilla.utils.dependency import require_dependencies, requires_dependencies
 from argilla.utils.span_utils import SpanUtils
 
 if TYPE_CHECKING:
     import datasets
     import pandas
     import spacy
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class DatasetBase:
@@ -125,7 +120,7 @@ class DatasetBase:
     def __str__(self):
         return repr(self)
 
-    @requires_version("datasets>1.17.0")
+    @requires_dependencies("datasets>1.17.0")
     def to_datasets(self) -> "datasets.Dataset":
         """Exports your records to a `datasets.Dataset`.
 
@@ -145,8 +140,8 @@ class DatasetBase:
         except Exception:
             del ds_dict["metadata"]
             dataset = datasets.Dataset.from_dict(ds_dict)
-            _LOGGER.warning(
-                "The 'metadata' of the records were removed, since it was incompatible" " with the 'datasets' format."
+            warnings.warn(
+                "The 'metadata' of the records were removed, since it was incompatible with the 'datasets' format."
             )
 
         return dataset
@@ -227,7 +222,7 @@ class DatasetBase:
         ]
 
         if not_supported_columns:
-            _LOGGER.warning(
+            warnings.warn(
                 "Following columns are not supported by the"
                 f" {cls._RECORD_TYPE.__name__} model and are ignored:"
                 f" {not_supported_columns}"
@@ -312,7 +307,7 @@ class DatasetBase:
         """
         not_supported_columns = [col for col in dataframe.columns if col not in cls._record_init_args()]
         if not_supported_columns:
-            _LOGGER.warning(
+            warnings.warn(
                 "Following columns are not supported by the"
                 f" {cls._RECORD_TYPE.__name__} model and are ignored:"
                 f" {not_supported_columns}"
@@ -362,7 +357,9 @@ class DatasetBase:
                 "transformers" and "spacy" are currently supported. Default: `transformers`
             lang: The spacy nlp Language pipeline used to process the dataset. (Only for spacy framework)
             train_size: The size of the training set. If float, should be between 0.0 and 1.0 and represent the
+                proportion of the dataset to include in the train split.
             test_size: The size of the test set. If float, should be between 0.0 and 1.0 and represent the
+                proportion of the dataset to include in the test split.
             seed: Random state.
 
         Returns:
@@ -440,6 +437,9 @@ class DatasetBase:
         # check for annotations
         assert any([rec.annotation for rec in self._records]), ValueError("Dataset has no annotations.")
 
+        if test_size == 0:
+            test_size = None
+
         # shuffle records
         shuffled_records = self._records.copy()
         seed = seed or random.randint(42, 1984)
@@ -449,25 +449,22 @@ class DatasetBase:
         if isinstance(framework, str):
             framework = Framework(framework)
 
-        if test_size == 0:
-            test_size = None
-
         # prepare for training for the right method
         if framework in [
             Framework.TRANSFORMERS,
             Framework.SETFIT,
             Framework.SPAN_MARKER,
             Framework.PEFT,
-            Framework.AUTOTRAIN,
         ]:
             return self._prepare_for_training_with_transformers(train_size=train_size, test_size=test_size, seed=seed)
-        elif framework is Framework.SPACY and lang is None:
+        elif framework in [Framework.SPACY, Framework.SPACY_TRANSFORMERS] and lang is None:
             raise ValueError(
-                "Please provide a spacy language model to prepare the dataset for training with the spacy framework."
+                "Please provide a `spaCy` language model to prepare the dataset for"
+                " training with the `spaCy`/`spaCy-transformers` framework."
             )
-        elif framework in [Framework.SPACY, Framework.SPARK_NLP, Framework.OPENAI]:
+        elif framework in [Framework.SPACY, Framework.SPACY_TRANSFORMERS, Framework.SPARK_NLP, Framework.OPENAI]:
             if train_size and test_size:
-                require_version("scikit-learn")
+                require_dependencies("scikit-learn")
                 from sklearn.model_selection import train_test_split
 
                 records_train, records_test = train_test_split(
@@ -476,7 +473,7 @@ class DatasetBase:
                     shuffle=False,
                     random_state=seed,
                 )
-                if framework is Framework.SPACY:
+                if framework in [Framework.SPACY, Framework.SPACY_TRANSFORMERS]:
                     train_docbin = self._prepare_for_training_with_spacy(nlp=lang, records=records_train)
                     test_docbin = self._prepare_for_training_with_spacy(nlp=lang, records=records_test)
                     return train_docbin, test_docbin
@@ -489,7 +486,7 @@ class DatasetBase:
                     test_jsonl = self._prepare_for_training_with_openai(records=records_test)
                     return train_jsonl, test_jsonl
             else:
-                if framework is Framework.SPACY:
+                if framework in [Framework.SPACY, Framework.SPACY_TRANSFORMERS]:
                     return self._prepare_for_training_with_spacy(nlp=lang, records=shuffled_records)
                 elif framework is Framework.SPARK_NLP:
                     return self._prepare_for_training_with_spark_nlp(records=shuffled_records)
@@ -504,7 +501,7 @@ class DatasetBase:
                 f"Framework {framework} is not supported. Choose from: {[e.value for e in Framework]}"
             )
 
-    @requires_version("spacy")
+    @requires_dependencies("spacy")
     def _prepare_for_training_with_spacy(
         self, **kwargs
     ) -> Union["spacy.token.DocBin", Tuple["spacy.token.DocBin", "spacy.token.DocBin"]]:
@@ -519,7 +516,7 @@ class DatasetBase:
 
         raise NotImplementedError
 
-    @requires_version("datasets>1.17.0")
+    @requires_dependencies("datasets>1.17.0")
     def _prepare_for_training_with_transformers(self, **kwargs) -> "datasets.Dataset":
         """Prepares the dataset for training using the "transformers" framework.
 
@@ -621,7 +618,7 @@ class DatasetForTextClassification(DatasetBase):
         super().__init__(records=records)
 
     @classmethod
-    @requires_version("datasets>1.17.0")
+    @requires_dependencies("datasets>1.17.0")
     def from_datasets(
         cls,
         dataset: "datasets.Dataset",
@@ -772,7 +769,7 @@ class DatasetForTextClassification(DatasetBase):
     def _from_pandas(cls, dataframe: pd.DataFrame) -> "DatasetForTextClassification":
         return cls([TextClassificationRecord(**row) for row in dataframe.to_dict("records")])
 
-    @requires_version("datasets>1.17.0")
+    @requires_dependencies("datasets>1.17.0")
     def _prepare_for_training_with_transformers(
         self,
         train_size: Optional[float] = None,
@@ -818,7 +815,7 @@ class DatasetForTextClassification(DatasetBase):
         ds = datasets.Dataset.from_dict(ds_dict, features=datasets.Features(feature_dict))
 
         if self._records[0].multi_label:
-            require_version("scikit-learn")
+            require_dependencies("scikit-learn")
             from sklearn.preprocessing import MultiLabelBinarizer
 
             labels = [rec["label"] for rec in ds]
@@ -839,7 +836,7 @@ class DatasetForTextClassification(DatasetBase):
 
         return ds
 
-    @requires_version("spacy")
+    @requires_dependencies("spacy")
     def _prepare_for_training_with_spacy(self, nlp: "spacy.Language", records: List[Record]) -> "spacy.tokens.DocBin":
         from spacy.tokens import DocBin
 
@@ -911,7 +908,7 @@ class DatasetForTextClassification(DatasetBase):
         self._verify_all_labels()  # verify that all labels are strings
 
         if len(self._records) <= len(self._SETTINGS.label_schema) * 100:
-            _LOGGER.warning("OpenAI recommends at least 100 examples per class for training a classification model.")
+            warnings.warn("OpenAI recommends at least 100 examples per class for training a classification model.")
 
         jsonl = []
         for rec in self._records:
@@ -951,8 +948,10 @@ class DatasetForTextClassification(DatasetBase):
         all_labels = list(all_labels)
         all_labels.sort()
 
-        _LOGGER.warning(
-            f"""No label schema provided. Using all_labels: TextClassificationSettings({all_labels}). We recommend providing a `TextClassificationSettings()` or setting `rg.configure_dataset_settings()`/`rg.load_dataset_settings()` to ensure reproducibility."""
+        warnings.warn(
+            f"No label schema provided. Using all_labels: TextClassificationSettings({all_labels}). "
+            "We recommend providing a `TextClassificationSettings()` or setting "
+            "`rg.configure_dataset_settings()`/`rg.load_dataset_settings()` to ensure reproducibility."
         )
         return TextClassificationSettings(all_labels)
 
@@ -1016,7 +1015,7 @@ class DatasetForTokenClassification(DatasetBase):
         return parent_fields + ["tags"]  # compute annotation from tags
 
     @classmethod
-    @requires_version("datasets>1.17.0")
+    @requires_dependencies("datasets>1.17.0")
     def from_datasets(
         cls,
         dataset: "datasets.Dataset",
@@ -1067,7 +1066,7 @@ class DatasetForTokenClassification(DatasetBase):
         for row in dataset:
             # TODO: fails with a KeyError if no tokens column is present and no mapping is indicated
             if not row["tokens"]:
-                _LOGGER.warning("Ignoring row with no tokens.")
+                warnings.warn("Ignoring row with no tokens.")
                 continue
 
             if row.get("tags"):
@@ -1094,7 +1093,7 @@ class DatasetForTokenClassification(DatasetBase):
     ) -> "DatasetForTokenClassification":
         return super().from_pandas(dataframe)
 
-    @requires_version("datasets>1.17.0")
+    @requires_dependencies("datasets>1.17.0")
     def _prepare_for_training_with_transformers(
         self,
         train_size: Optional[float] = None,
@@ -1134,7 +1133,7 @@ class DatasetForTokenClassification(DatasetBase):
 
         return ds
 
-    @requires_version("spacy")
+    @requires_dependencies("spacy")
     def _prepare_for_training_with_spacy(self, nlp: "spacy.Language", records: List[Record]) -> "spacy.tokens.DocBin":
         from spacy.tokens import DocBin
 
@@ -1199,7 +1198,7 @@ class DatasetForTokenClassification(DatasetBase):
         self._verify_all_labels()
 
         if len(self._records) <= 500:
-            _LOGGER.warning("OpenAI recommends at least 500 examples for training a conditional generation model.")
+            warnings.warn("OpenAI recommends at least 500 examples for training a conditional generation model.")
 
         jsonl = []
         for rec in self._records:
@@ -1226,8 +1225,10 @@ class DatasetForTokenClassification(DatasetBase):
                     all_labels.add(label)
         all_labels = list(all_labels)
         all_labels.sort()
-        _LOGGER.warning(
-            f"""No label schema provided. Using all_labels: TokenClassificationSettings({all_labels}). We recommend providing a `TokenClassificationSettings()` or setting `rg.configure_dataset_settings()`/`rg.load_dataset_settings()` to ensure reproducibility."""
+        warnings.warn(
+            f"No label schema provided. Using all_labels: TokenClassificationSettings({all_labels}). "
+            "We recommend providing a `TokenClassificationSettings()` or setting "
+            "`rg.configure_dataset_settings()`/`rg.load_dataset_settings()` to ensure reproducibility."
         )
         return TokenClassificationSettings(all_labels)
 
@@ -1325,7 +1326,7 @@ class DatasetForText2Text(DatasetBase):
         super().__init__(records=records)
 
     @classmethod
-    @requires_version("datasets>1.17.0")
+    @requires_dependencies("datasets>1.17.0")
     def from_datasets(
         cls,
         dataset: "datasets.Dataset",
@@ -1428,7 +1429,7 @@ class DatasetForText2Text(DatasetBase):
     def _from_pandas(cls, dataframe: pd.DataFrame) -> "DatasetForText2Text":
         return cls([Text2TextRecord(**row) for row in dataframe.to_dict("records")])
 
-    @requires_version("datasets>1.17.0")
+    @requires_dependencies("datasets>1.17.0")
     def _prepare_for_training_with_transformers(
         self,
         train_size: Optional[float] = None,
@@ -1484,7 +1485,7 @@ class DatasetForText2Text(DatasetBase):
         end_token = OPENAI_END_TOKEN
         whitespace = OPENAI_WHITESPACE
         if len(self._records) <= 500:
-            _LOGGER.warning("OpenAI recommends at least 500 examples for training a conditional generation model.")
+            warnings.warn("OpenAI recommends at least 500 examples for training a conditional generation model.")
 
         jsonl = []
         for rec in self._records:

@@ -55,7 +55,11 @@
       allow-close
       @close-modal="showTrainModal(false)"
     >
-      <DatasetTrainComponent :datasetTask="dataset.task" />
+      <DatasetTrainComponent
+        :datasetTask="dataset.task"
+        :datasetName="datasetName"
+        :workspaceName="workspace"
+      />
     </BaseModal>
   </div>
 </template>
@@ -77,7 +81,7 @@ export default {
     // 2. Fetch the record data and initialize the corresponding data models
     await this.fetchByName(this.datasetName);
     // 3. Fetch vector info from query param and setup the active vector if needed
-    await this.activateVectorAndRecorByUrlQueryParams();
+    await this.activateVectorAndRecordByUrlQueryParams();
     // 4. If we have a vector filter, apply a search
     if (this.referenceRecordId) {
       await this.searchRecords({ query: this.dataset.query });
@@ -85,7 +89,7 @@ export default {
   },
   data() {
     return {
-      visibleTrainModal: false,
+      visibleTrainModal: false, // TODO - encapsulate this logic in datasetTrain.component and create new datasetTrain.modal
     };
   },
   computed: {
@@ -96,12 +100,12 @@ export default {
       return [
         { link: { name: "datasets" }, name: "Home" },
         {
-          link: { path: `/datasets?workspace=${this.workspace}` },
+          link: { path: `/datasets?workspaces=${this.workspace}` },
           name: this.workspace,
         },
         {
           link: this.$route.fullPath,
-          name: this.dataset ? this.dataset.name : undefined,
+          name: this.dataset?.name,
         },
       ];
     },
@@ -201,7 +205,7 @@ export default {
         this.updateUrlParamsWithVectorInfo(vectorData);
       }
     },
-    async activateVectorAndRecorByUrlQueryParams() {
+    async activateVectorAndRecordByUrlQueryParams() {
       let vectorId = this.$route.query.vectorId;
       if (vectorId) {
         vectorId = JSON.parse(Base64.decode(vectorId));

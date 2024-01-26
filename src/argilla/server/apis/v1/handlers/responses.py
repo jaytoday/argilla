@@ -15,21 +15,31 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Security, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from argilla.server.contexts import datasets
-from argilla.server.database import get_db
-from argilla.server.models import User
+from argilla.server.database import get_async_db
+from argilla.server.errors.future import NotFoundError
+from argilla.server.models import Response, User
 from argilla.server.policies import ResponsePolicyV1, authorize
-from argilla.server.schemas.v1.responses import Response, ResponseUpdate
+from argilla.server.schemas.v1.responses import Response as ResponseSchema
+from argilla.server.schemas.v1.responses import (
+    ResponsesBulk,
+    ResponsesBulkCreate,
+    ResponseUpdate,
+)
 from argilla.server.search_engine import SearchEngine, get_search_engine
 from argilla.server.security import auth
+from argilla.server.use_cases.responses.upsert_responses_in_bulk import (
+    UpsertResponsesInBulkUseCase,
+    UpsertResponsesInBulkUseCaseFactory,
+)
 
 router = APIRouter(tags=["responses"])
 
 
-def _get_response(db: Session, response_id: UUID):
-    response = datasets.get_response_by_id(db, response_id)
+async def _get_response(db: AsyncSession, response_id: UUID) -> Response:
+    response = await datasets.get_response_by_id(db, response_id)
     if not response:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -39,18 +49,33 @@ def _get_response(db: Session, response_id: UUID):
     return response
 
 
-@router.put("/responses/{response_id}", response_model=Response)
+@router.post("/me/responses/bulk", response_model=ResponsesBulk)
+async def create_current_user_responses_bulk(
+    *,
+    body: ResponsesBulkCreate,
+    current_user: User = Security(auth.get_current_user),
+    use_case: UpsertResponsesInBulkUseCase = Depends(UpsertResponsesInBulkUseCaseFactory()),
+):
+    try:
+        responses_bulk_items = await use_case.execute(body.items, user=current_user)
+    except NotFoundError as err:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(err))
+    else:
+        return ResponsesBulk(items=responses_bulk_items)
+
+
+@router.put("/responses/{response_id}", response_model=ResponseSchema)
 async def update_response(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     search_engine: SearchEngine = Depends(get_search_engine),
     response_id: UUID,
     response_update: ResponseUpdate,
     current_user: User = Security(auth.get_current_user),
 ):
-    response = _get_response(db, response_id)
+    response = await _get_response(db, response_id)
 
-    authorize(current_user, ResponsePolicyV1.update(response))
+    await authorize(current_user, ResponsePolicyV1.update(response))
 
     # TODO: We should split API v1 into different FastAPI apps so we can customize error management.
     #   After mapping ValueError to 422 errors for API v1 then we can remove this try except.
@@ -60,17 +85,17 @@ async def update_response(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(err))
 
 
-@router.delete("/responses/{response_id}", response_model=Response)
+@router.delete("/responses/{response_id}", response_model=ResponseSchema)
 async def delete_response(
     *,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
     search_engine=Depends(get_search_engine),
     response_id: UUID,
     current_user: User = Security(auth.get_current_user),
 ):
-    response = _get_response(db, response_id)
+    response = await _get_response(db, response_id)
 
-    authorize(current_user, ResponsePolicyV1.delete(response))
+    await authorize(current_user, ResponsePolicyV1.delete(response))
 
     await datasets.delete_response(db, search_engine, response)
 

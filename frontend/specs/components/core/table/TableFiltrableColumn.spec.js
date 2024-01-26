@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import TableFiltrableColumn from "@/components/base/table/TableFiltrableColumn";
+import TableFiltrableColumn from "@/components/base/base-table/TableFiltrableColumn";
 
 function mountTableFiltrableColumn() {
   return mount(TableFiltrableColumn, {
@@ -26,7 +26,7 @@ function mountTableFiltrableColumn() {
 }
 
 describe("TableFiltrableColumn", () => {
-  let spy = jest.spyOn(console, "error");
+  const spy = jest.spyOn(console, "error");
   afterEach(() => spy.mockReset());
 
   test("renders properly", () => {

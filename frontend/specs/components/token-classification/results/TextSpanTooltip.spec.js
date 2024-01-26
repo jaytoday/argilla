@@ -1,8 +1,8 @@
 import { mount } from "@vue/test-utils";
-import TextSpanTooltip from "@/components/token-classifier/results/TextSpanTooltip";
+import TextSpanTooltipVue from "@/components/token-classification/results/TextSpanTooltip.vue";
 
 function mountTextSpanTooltip() {
-  return mount(TextSpanTooltip, {
+  return mount(TextSpanTooltipVue, {
     propsData: {
       span: {
         end: 73,
@@ -20,7 +20,7 @@ function mountTextSpanTooltip() {
 }
 
 describe("TextSpanTooltip", () => {
-  let spy = jest.spyOn(console, "error");
+  const spy = jest.spyOn(console, "error");
   afterEach(() => spy.mockReset());
 
   test("renders properly", () => {

@@ -18,7 +18,7 @@ This module configures the api routes under /api prefix, and
 set the required security dependencies if api security is enabled
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 
 from argilla.server.apis.v0.handlers import (
     datasets,
@@ -35,9 +35,13 @@ from argilla.server.apis.v0.handlers import (
 )
 from argilla.server.apis.v1.handlers import datasets as datasets_v1
 from argilla.server.apis.v1.handlers import fields as fields_v1
+from argilla.server.apis.v1.handlers import metadata_properties as metadata_properties_v1
 from argilla.server.apis.v1.handlers import questions as questions_v1
 from argilla.server.apis.v1.handlers import records as records_v1
 from argilla.server.apis.v1.handlers import responses as responses_v1
+from argilla.server.apis.v1.handlers import suggestions as suggestions_v1
+from argilla.server.apis.v1.handlers import users as users_v1
+from argilla.server.apis.v1.handlers import vectors_settings as vectors_settings_v1
 from argilla.server.apis.v1.handlers import workspaces as workspaces_v1
 from argilla.server.errors.base_errors import __ALL__
 
@@ -63,8 +67,17 @@ for router in [
 
 # API v1
 api_router.include_router(datasets_v1.router, prefix="/v1")
-api_router.include_router(workspaces_v1.router, prefix="/v1")
 api_router.include_router(fields_v1.router, prefix="/v1")
 api_router.include_router(questions_v1.router, prefix="/v1")
+api_router.include_router(metadata_properties_v1.router, prefix="/v1")
 api_router.include_router(records_v1.router, prefix="/v1")
 api_router.include_router(responses_v1.router, prefix="/v1")
+api_router.include_router(suggestions_v1.router, prefix="/v1")
+api_router.include_router(users_v1.router, prefix="/v1")
+api_router.include_router(vectors_settings_v1.router, prefix="/v1")
+api_router.include_router(workspaces_v1.router, prefix="/v1")
+
+
+@api_router.route("/{_:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"], include_in_schema=False)
+def endpoint_not_found_controller(request: Request):
+    raise HTTPException(status_code=404, detail=f"Endpoint {request.url.path!r} not found")

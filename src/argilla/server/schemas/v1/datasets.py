@@ -13,88 +13,35 @@
 #  limitations under the License.
 
 from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, PositiveInt, conlist, constr, root_validator, validator
-from pydantic import Field as PydanticField
-
-from argilla.server.search_engine import Query
+from argilla.server.enums import DatasetStatus
+from argilla.server.pydantic_v1 import BaseModel, Field, constr
+from argilla.server.schemas.base import UpdateSchema
 
 try:
-    from typing import Annotated, Literal
+    from typing import Annotated
 except ImportError:
-    from typing_extensions import Annotated, Literal
+    from typing_extensions import Annotated
 
-from argilla.server.models import (
-    DatasetStatus,
-    FieldType,
-    QuestionSettings,
-    QuestionType,
-    ResponseStatus,
-)
-
-DATASET_CREATE_GUIDELINES_MIN_LENGTH = 1
-DATASET_CREATE_GUIDELINES_MAX_LENGTH = 10000
-
-FIELD_CREATE_NAME_REGEX = r"^(?=.*[a-z0-9])[a-z0-9_-]+$"
-FIELD_CREATE_NAME_MIN_LENGTH = 1
-FIELD_CREATE_NAME_MAX_LENGTH = 200
-FIELD_CREATE_TITLE_MIN_LENGTH = 1
-FIELD_CREATE_TITLE_MAX_LENGTH = 500
-
-QUESTION_CREATE_NAME_REGEX = r"^(?=.*[a-z0-9])[a-z0-9_-]+$"
-QUESTION_CREATE_NAME_MIN_LENGTH = 1
-QUESTION_CREATE_NAME_MAX_LENGTH = 200
-QUESTION_CREATE_TITLE_MIN_LENGTH = 1
-QUESTION_CREATE_TITLE_MAX_LENGTH = 500
-QUESTION_CREATE_DESCRIPTION_MIN_LENGTH = 1
-QUESTION_CREATE_DESCRIPTION_MAX_LENGTH = 1000
-
-RATING_OPTIONS_MIN_ITEMS = 2
-RATING_OPTIONS_MAX_ITEMS = 100
-
-LABEL_SELECTION_OPTIONS_MIN_ITEMS = 2
-LABEL_SELECTION_OPTIONS_MAX_ITEMS = 250
-LABEL_SELECTION_VALUE_MIN_LENGHT = 1
-LABEL_SELECTION_VALUE_MAX_LENGHT = 200
-LABEL_SELECTION_TEXT_MIN_LENGTH = 1
-LABEL_SELECTION_TEXT_MAX_LENGTH = 500
-LABEL_SELECTION_DESCRIPTION_MIN_LENGTH = 1
-LABEL_SELECTION_DESCRIPTION_MAX_LENGTH = 1000
-LABEL_SELECTION_LABEL_DESCRIPTION_MAX_LENGTH = 100
-
-RECORDS_CREATE_MIN_ITEMS = 1
-RECORDS_CREATE_MAX_ITEMS = 1000
+DATASET_NAME_REGEX = r"^(?!-|_)[a-zA-Z0-9-_ ]+$"
+DATASET_NAME_MIN_LENGTH = 1
+DATASET_NAME_MAX_LENGTH = 200
+DATASET_GUIDELINES_MIN_LENGTH = 1
+DATASET_GUIDELINES_MAX_LENGTH = 10000
 
 
-class Dataset(BaseModel):
-    id: UUID
-    name: str
-    guidelines: Optional[str]
-    status: DatasetStatus
-    workspace_id: UUID
-    inserted_at: datetime
-    updated_at: datetime
-
-    class Config:
-        orm_mode = True
+DatasetName = Annotated[
+    constr(regex=DATASET_NAME_REGEX, min_length=DATASET_NAME_MIN_LENGTH, max_length=DATASET_NAME_MAX_LENGTH),
+    Field(..., description="Dataset name"),
+]
 
 
-class Datasets(BaseModel):
-    items: List[Dataset]
-
-
-class DatasetCreate(BaseModel):
-    name: str
-    guidelines: Optional[
-        constr(
-            min_length=DATASET_CREATE_GUIDELINES_MIN_LENGTH,
-            max_length=DATASET_CREATE_GUIDELINES_MAX_LENGTH,
-        )
-    ]
-    workspace_id: UUID
+DatasetGuidelines = Annotated[
+    constr(min_length=DATASET_GUIDELINES_MIN_LENGTH, max_length=DATASET_GUIDELINES_MAX_LENGTH),
+    Field(..., description="Dataset guidelines"),
+]
 
 
 class RecordMetrics(BaseModel):
@@ -108,22 +55,19 @@ class ResponseMetrics(BaseModel):
     draft: int
 
 
-class Metrics(BaseModel):
+class DatasetMetrics(BaseModel):
     records: RecordMetrics
     responses: ResponseMetrics
 
 
-class TextFieldSettings(BaseModel):
-    type: Literal[FieldType.text]
-    use_markdown: bool = False
-
-
-class Field(BaseModel):
+class Dataset(BaseModel):
     id: UUID
     name: str
-    title: str
-    required: bool
-    settings: TextFieldSettings
+    guidelines: Optional[str]
+    allow_extra_metadata: bool
+    status: DatasetStatus
+    workspace_id: UUID
+    last_activity_at: datetime
     inserted_at: datetime
     updated_at: datetime
 
@@ -131,227 +75,20 @@ class Field(BaseModel):
         orm_mode = True
 
 
-class Fields(BaseModel):
-    items: List[Field]
+class Datasets(BaseModel):
+    items: List[Dataset]
 
 
-class FieldCreate(BaseModel):
-    name: constr(
-        regex=FIELD_CREATE_NAME_REGEX,
-        min_length=FIELD_CREATE_NAME_MIN_LENGTH,
-        max_length=FIELD_CREATE_NAME_MAX_LENGTH,
-    )
-    title: constr(
-        min_length=FIELD_CREATE_TITLE_MIN_LENGTH,
-        max_length=FIELD_CREATE_TITLE_MAX_LENGTH,
-    )
-    required: Optional[bool]
-    settings: TextFieldSettings
+class DatasetCreate(BaseModel):
+    name: DatasetName
+    guidelines: Optional[DatasetGuidelines]
+    allow_extra_metadata: bool = True
+    workspace_id: UUID
 
 
-class TextQuestionSettingsCreate(BaseModel):
-    type: Literal[QuestionType.text]
-    use_markdown: bool = False
+class DatasetUpdate(UpdateSchema):
+    name: Optional[DatasetName]
+    guidelines: Optional[DatasetGuidelines]
+    allow_extra_metadata: Optional[bool]
 
-
-class UniqueValuesCheckerMixin(BaseModel):
-    @root_validator
-    def check_unique_values(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        options = values.get("options", [])
-        seen = set()
-        duplicates = set()
-        for option in options:
-            if option.value in seen:
-                duplicates.add(option.value)
-            else:
-                seen.add(option.value)
-        if duplicates:
-            raise ValueError(f"Option values must be unique, found duplicates: {duplicates}")
-        return values
-
-
-class RatingQuestionSettingsOption(BaseModel):
-    value: int
-
-
-class RatingQuestionSettingsCreate(UniqueValuesCheckerMixin):
-    type: Literal[QuestionType.rating]
-    options: conlist(
-        item_type=RatingQuestionSettingsOption,
-        min_items=RATING_OPTIONS_MIN_ITEMS,
-        max_items=RATING_OPTIONS_MAX_ITEMS,
-    )
-
-
-class LabelSelectionQuestionSettingsOption(BaseModel):
-    value: constr(
-        min_length=LABEL_SELECTION_VALUE_MIN_LENGHT,
-        max_length=LABEL_SELECTION_VALUE_MAX_LENGHT,
-    )
-    text: constr(
-        min_length=LABEL_SELECTION_TEXT_MIN_LENGTH,
-        max_length=LABEL_SELECTION_TEXT_MAX_LENGTH,
-    )
-    description: Optional[
-        constr(
-            min_length=LABEL_SELECTION_DESCRIPTION_MIN_LENGTH,
-            max_length=LABEL_SELECTION_DESCRIPTION_MAX_LENGTH,
-        )
-    ] = None
-
-
-class LabelSelectionQuestionSettingsCreate(UniqueValuesCheckerMixin):
-    type: Literal[QuestionType.label_selection]
-    options: conlist(
-        item_type=LabelSelectionQuestionSettingsOption,
-        min_items=LABEL_SELECTION_OPTIONS_MIN_ITEMS,
-        max_items=LABEL_SELECTION_OPTIONS_MAX_ITEMS,
-    )
-    visible_options: Optional[PositiveInt] = None
-
-
-class MultiLabelSelectionQuestionSettingsCreate(LabelSelectionQuestionSettingsCreate):
-    type: Literal[QuestionType.multi_label_selection]
-
-
-QuestionSettingsCreate = Annotated[
-    Union[
-        TextQuestionSettingsCreate,
-        RatingQuestionSettingsCreate,
-        LabelSelectionQuestionSettingsCreate,
-        MultiLabelSelectionQuestionSettingsCreate,
-    ],
-    PydanticField(discriminator="type"),
-]
-
-
-class Question(BaseModel):
-    id: UUID
-    name: str
-    title: str
-    description: Optional[str]
-    required: bool
-    settings: QuestionSettings
-    inserted_at: datetime
-    updated_at: datetime
-
-    class Config:
-        orm_mode = True
-
-
-class Questions(BaseModel):
-    items: List[Question]
-
-
-class QuestionCreate(BaseModel):
-    name: constr(
-        regex=QUESTION_CREATE_NAME_REGEX,
-        min_length=QUESTION_CREATE_NAME_MIN_LENGTH,
-        max_length=QUESTION_CREATE_NAME_MAX_LENGTH,
-    )
-    title: constr(
-        min_length=QUESTION_CREATE_TITLE_MIN_LENGTH,
-        max_length=QUESTION_CREATE_TITLE_MAX_LENGTH,
-    )
-    description: Optional[
-        constr(
-            min_length=QUESTION_CREATE_DESCRIPTION_MIN_LENGTH,
-            max_length=QUESTION_CREATE_DESCRIPTION_MAX_LENGTH,
-        )
-    ]
-    required: Optional[bool]
-    settings: QuestionSettingsCreate
-
-
-class ResponseValue(BaseModel):
-    value: Any
-
-
-class ResponseValueCreate(BaseModel):
-    value: Any
-
-
-class Response(BaseModel):
-    id: UUID
-    values: Optional[Dict[str, ResponseValue]]
-    status: ResponseStatus
-    user_id: UUID
-    inserted_at: datetime
-    updated_at: datetime
-
-    class Config:
-        orm_mode = True
-
-
-class RecordInclude(str, Enum):
-    responses = "responses"
-
-
-class Record(BaseModel):
-    id: UUID
-    fields: Dict[str, Any]
-    external_id: Optional[str]
-    # TODO: move `responses` to `response` since contextualized endpoint will contains only the user response
-    # response: Optional[Response]
-    responses: Optional[List[Response]]
-    inserted_at: datetime
-    updated_at: datetime
-
-    class Config:
-        orm_mode = True
-
-
-class Records(BaseModel):
-    items: List[Record]
-
-
-class UserSubmittedResponseCreate(BaseModel):
-    user_id: UUID
-    values: Dict[str, ResponseValueCreate]
-    status: Literal[ResponseStatus.submitted]
-
-
-class UserDiscardedResponseCreate(BaseModel):
-    user_id: UUID
-    values: Optional[Dict[str, ResponseValueCreate]]
-    status: Literal[ResponseStatus.discarded]
-
-
-UserResponseCreate = Annotated[
-    Union[UserSubmittedResponseCreate, UserDiscardedResponseCreate],
-    PydanticField(discriminator="status"),
-]
-
-
-class RecordCreate(BaseModel):
-    fields: Dict[str, Any]
-    external_id: Optional[str]
-    responses: Optional[List[UserResponseCreate]]
-
-    @validator("responses")
-    def check_user_id_is_unique(cls, values):
-        user_ids = []
-
-        for value in values:
-            if value.user_id in user_ids:
-                raise ValueError(f"Responses contains several responses for the same user_id: {str(value.user_id)!r}")
-            user_ids.append(value.user_id)
-
-        return values
-
-
-class RecordsCreate(BaseModel):
-    items: conlist(item_type=RecordCreate, min_items=RECORDS_CREATE_MIN_ITEMS, max_items=RECORDS_CREATE_MAX_ITEMS)
-
-
-class SearchRecordsQuery(BaseModel):
-    query: Query
-
-
-class SearchRecord(BaseModel):
-    record: Record
-    query_score: Optional[float]
-
-
-class SearchRecordsResult(BaseModel):
-    items: List[SearchRecord]
+    __non_nullable_fields__ = {"name", "allow_extra_metadata"}

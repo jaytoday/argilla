@@ -4,7 +4,7 @@
 
 ## Home page
 
-![Home page](../../_static/reference/webapp/pages-homepage.png)
+![Home page](/_static/reference/webapp/pages-homepage.png)
 
 The _Home page_ is mainly a **filterable, searchable and sortable list** of **datasets**.
 It is the **entry point** to the Argilla web app and is composed of the following three components.
@@ -16,16 +16,15 @@ The "_Search datasets_" bar on the top allows you to search for a specific datas
 ### Dataset list
 
 In the center of the page you see the list of datasets available for **your user account**.
-The list consists of following columns:
+The list consists of the following columns:
 
 - **Name**: The name of the dataset, can be sorted alphabetically.
 - **Workspace**: A filterable column showing the workspace to which the dataset belongs.
-- **Task**: The [task](../../guides/task_examples.ipynb) of the dataset. This is a filterable column.
-- **Tags**: User defined tags for the dataset.
+- **Tags**: User-defined tags for the dataset.
 - **Created at**: When was the dataset first logged by the client.
 - **Updated at**: When was the dataset last modified, either via the Argilla web app or the client.
 
-### Side bar
+### Sidebar
 
 You can find a user icon and a refresh button on the top right:
 
@@ -36,10 +35,10 @@ You can find a user icon and a refresh button on the top right:
 ## Dataset
 
 ```{note}
-For a description of the UI and features related to the new Feedback Task datasets, please check [this guide](../../guides/llms/practical_guides/annotate_dataset.ipynb).
+For a description of the UI and features related to the new Feedback Task datasets, please check [this guide](/practical_guides/annotate_dataset).
 ```
 
-![Dataset page](../../_static/reference/webapp/pages-dataset_page.png)
+![Dataset page](/_static/reference/webapp/pages-dataset_page.png)
 
 The _Dataset_ page is the main page of the Argilla web app.
 From here you can access most of Argilla's features, like **exploring and annotating** the records of your dataset.
@@ -50,8 +49,8 @@ The page is composed of 4 major components:
 
 
 Argilla's _search bar_ is a powerful tool that allows you to thoroughly explore your dataset, and quickly navigate through the records.
-You can either fuzzy search the contents of your records, or use the more advanced [query string syntax](https://www.elastic.co/guide/en/elasticsearch/reference/7.10/query-dsl-query-string-query.html#query-string-syntax) of Elasticsearch to take full advantage of Argilla's [data models](../python/python_client.rst#module-argilla.client.models).
-You can find more information about how to use the search bar in our detailed [search guide](search_records.md).
+You can either fuzzy search the contents of your records, or use the more advanced [query string syntax](https://www.elastic.co/guide/en/elasticsearch/reference/7.10/query-dsl-query-string-query.html#query-string-syntax) of Elasticsearch to take full advantage of Argilla's [data models](/reference/python/python_client.rst).
+You can find more information about how to use the search bar in our detailed [search guide](/practical_guides/filter_dataset).
 
 ### Filters
 
@@ -66,9 +65,9 @@ On the right side of the filters, the info button can be used to open a small ov
 ### Record cards
 
 The record cards are at the heart of the _Dataset_ page and contain your data.
-There are three different flavors of record cards depending on the [task](../../guides/task_examples.ipynb) of your dataset.
+There are three different flavors of record cards depending on the task of your dataset.
 All of them share the same basic structure showing the input text and a horizontal ellipsis (or "kebab menu") on the top right that lets you access the record's metadata.
-Predictions and annotations are shown depending on the current [mode](#modes) and [task](../../guides/task_examples.ipynb) of the dataset.
+Predictions and annotations are shown depending on the current [mode](#modes) and task of the dataset.
 
 ```{hint}
 Use the menu on the bottom left corner of the page to select how many record cards you want to see per page: 1, 20, 50 or 100. This allows you to annotate record by record or in bigger bulks.
@@ -78,7 +77,7 @@ Check out our [exploration](../webapp/features.md#explore-records) and [annotati
 
 #### Text classification
 
-In this task the predictions are given as tags below the input text.
+In this task, the predictions are given as tags below the input text.
 They contain the label as well as a percentage score.
 When in [Explore mode](#modes) annotations are shown as tags on the right together with a symbol indicating if the predictions match the annotations or not.
 When in [Annotate mode](#modes) predictions and annotations share the same labels (annotation labels are darker).
@@ -91,8 +90,8 @@ If the record has multiple inputs, these will appear in alphabetical order.
 
 #### Token classification
 
-In this task annotations are given as colored highlights in the input text, while predictions are indicated by underlines.
-At the top of the record list you will find a legend that connects the colors to the respective labels.
+In this task, annotations are given as colored highlights in the input text, while predictions are indicated by underlines.
+At the top of the record list, you will find a legend that connects the colors to the respective labels.
 When in [Annotate mode](#modes) you can remove annotations or add new ones by simply selecting the desired text.
 
 ```{hint}
@@ -113,22 +112,22 @@ The right sidebar is divided into three sections.
 
 This section of the sidebar lets you switch between the different Argilla modes that are covered extensively in their respective guides:
 
-- **Hand labeling**: this mode lets you conveniently [annotate your data](./features.md#annotate-records)
+- **Hand labeling**: this mode lets you conveniently [annotate your data](/reference/webapp/features.md#annotate-records)
 - **Weak labeling**: this mode helps you to [define rules](./features.md#weak-labeling) to automatically label your data (Text Classification only)
 - **Explore**: this mode is for [exploring your dataset](./features.md#explore-records) and gain valuable insights
 
 
 #### Metrics
 
-In this section you find several "metrics" that can provide valuable insights to your dataset.
+In this section, you find several "metrics" that can provide valuable insights to your dataset.
 They also provide some support while annotating your records, or defining heuristic rules.
-There are three different kind of _metrics_:
+There are three different kinds of _metrics_:
 
 - **Progress**: see metrics of your annotation process, like its progress and the label distribution (only visible in the _Explore_ and _Annotate_ mode)
 - **Overall rule metrics**: see aggregated metrics about your defined rules (only visible in the _Define rules_ mode)
 - **Stats**: check the keywords of your dataset (text classification, text generation) or the mentions of your annotations and predictions (token classification)
 
-You can find more information about each metric in our dedicated [metrics guide](view_dataset_metrics.md).
+You can find more information about each metric in our dedicated [metrics guide](/practical_guides/collect_responses).
 
 #### Refresh
 
@@ -137,7 +136,35 @@ For example, if you are annotating and use the [Status filter](./features.md) to
 
 
 ## Dataset settings
-![Dataset page](../../_static/reference/webapp/pages-dataset_settings.png)
+
+To access this page, click on the settings icon next to the user icon at the screen's top right.
+
+On this page, you can access the settings of a specific dataset and make modifications.
+
+
+### Feedback Task
+
+![Dataset page](/_static/reference/webapp/pages-dataset_settings_feedback.png)
+
+#### Info
+
+You can consult and edit the annotation guidelines in markdown format.
+
+#### Fields
+
+You can edit each field's title and activate the markdown format for each.
+
+#### Questions
+
+You have the ability to edit questions and their descriptions, activate markdown formatting for each question, and preview the results in real time.
+
+#### Danger zone
+
+You can delete your dataset. Be careful this action is irreversible.
+
+### Other Tasks
+
+![Dataset page](/_static/reference/webapp/pages-dataset_settings.png)
 
 You can access this page by clicking on the settings icon next to the user icon inside of the Dataset view.
 
@@ -145,24 +172,27 @@ In this page, you will be able to access the settings of a specific dataset and 
 
 ### Description and annotation guidelines
 
-Soon you will be able to edit this information.
+Support for editing this will only be added for the Feedback Task dataset.
 
 ### Labels
-Here you can [define your labeling schema](../../guides/log_load_and_prepare_data.ipynb#update-a-dataset) for this dataset, see the current one and add new labels to it.
+
+Here you can [define your labeling schema](/practical_guides/create_update_dataset/create_dataset) for this dataset, see the current one and add new labels to it.
 
 ### Danger zone
+
 In this area, you will find a button to delete the current dataset.
 
 ## User settings
-![User settings page](../../_static/images/reference/ui/user_settings_page.png)
+
+![User settings page](/_static/images/reference/ui/user_settings_page.png)
 
 You can access this page by clicking on your user icon in the top right corner and selecting "My settings" in the dropdown.
 
-In this page, you will be able to access your user settings and copy your API key. Learn more about how to [set up users](../../getting_started/installation/configurations/user_management.md).
+In this page, you will be able to access your user settings and copy your API key. Learn more about how to [set up users](/getting_started/installation/configurations/user_management.md).
 
 ### Role
 
-You can see your user role next to the user icon. The roles can be `admin` or `annotator`.
+You can see your user role next to the user icon. The roles can be `owner` or `annotator`.
 
 ### Username, name and surname
 
@@ -170,4 +200,4 @@ These are your user details. The `username` shows the username used as login for
 
 ### API key
 
-Here you can copy your API key that you can use to conect to Argilla from the Python client.
+Here you can copy your API key that you can use to connect to Argilla from the Python client.

@@ -17,12 +17,12 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Security
-from pydantic import BaseModel, Field
 
 from argilla.server.apis.v0.helpers import deprecate_endpoint
 from argilla.server.apis.v0.models.commons.params import CommonTaskHandlerDependencies
 from argilla.server.commons.config import TaskConfig, TasksFactory
 from argilla.server.models import User
+from argilla.server.pydantic_v1 import BaseModel, Field
 from argilla.server.security import auth
 from argilla.server.services.datasets import DatasetsService
 from argilla.server.services.metrics import MetricsService
@@ -60,8 +60,8 @@ class MetricSummaryParams:
 
 
 def configure_router(router: APIRouter, cfg: TaskConfig):
-    base_metrics_endpoint = f"/{cfg.task}/{{name}}/metrics"
-    new_base_metrics_endpoint = f"/{{name}}/{cfg.task}/metrics"
+    base_metrics_endpoint = f"/{cfg.task.value}/{{name}}/metrics"
+    new_base_metrics_endpoint = f"/{{name}}/{cfg.task.value}/metrics"
 
     @deprecate_endpoint(
         path=base_metrics_endpoint,
@@ -70,13 +70,13 @@ def configure_router(router: APIRouter, cfg: TaskConfig):
         operation_id="get_dataset_metrics",
         name="get_dataset_metrics",
     )
-    def get_dataset_metrics(
+    async def get_dataset_metrics(
         name: str,
         request_deps: CommonTaskHandlerDependencies = Depends(),
         current_user: User = Security(auth.get_current_user),
         datasets: DatasetsService = Depends(DatasetsService.get_instance),
     ) -> List[MetricInfo]:
-        dataset = datasets.find_by_name(
+        dataset = await datasets.find_by_name(
             user=current_user,
             name=name,
             task=cfg.task,
@@ -95,7 +95,7 @@ def configure_router(router: APIRouter, cfg: TaskConfig):
         operation_id="metric_summary",
         name="metric_summary",
     )
-    def metric_summary(
+    async def metric_summary(
         name: str,
         metric: str,
         query: cfg.query,
@@ -105,7 +105,7 @@ def configure_router(router: APIRouter, cfg: TaskConfig):
         datasets: DatasetsService = Depends(DatasetsService.get_instance),
         metrics: MetricsService = Depends(MetricsService.get_instance),
     ):
-        dataset = datasets.find_by_name(
+        dataset = await datasets.find_by_name(
             user=current_user,
             name=name,
             task=cfg.task,

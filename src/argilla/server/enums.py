@@ -15,8 +15,70 @@
 from enum import Enum
 
 
-class ResponseStatusFilter(str, Enum):
+class FieldType(str, Enum):
+    text = "text"
+
+
+class ResponseStatus(str, Enum):
     draft = "draft"
-    missing = "missing"
     submitted = "submitted"
     discarded = "discarded"
+
+
+class ResponseStatusFilter(str, Enum):
+    draft = "draft"
+    missing = "missing"  # Deprecated, use pending instead
+    pending = "pending"
+    submitted = "submitted"
+    discarded = "discarded"
+
+
+class SuggestionType(str, Enum):
+    model = "model"
+    human = "human"
+
+
+class DatasetStatus(str, Enum):
+    draft = "draft"
+    ready = "ready"
+
+
+class UserRole(str, Enum):
+    owner = "owner"
+    admin = "admin"
+    annotator = "annotator"
+
+
+class RecordInclude(str, Enum):
+    responses = "responses"
+    suggestions = "suggestions"
+    vectors = "vectors"
+
+
+class QuestionType(str, Enum):
+    text = "text"
+    rating = "rating"
+    label_selection = "label_selection"
+    multi_label_selection = "multi_label_selection"
+    ranking = "ranking"
+
+
+class MetadataPropertyType(str, Enum):
+    terms = "terms"  # Textual types with a fixed value list
+    integer = "integer"  # Integer values
+    float = "float"  # Decimal values
+
+
+class RecordSortField(str, Enum):
+    inserted_at = "inserted_at"
+    updated_at = "updated_at"
+
+
+class SortOrder(str, Enum):
+    asc = "asc"
+    desc = "desc"
+
+
+class SimilarityOrder(str, Enum):
+    most_similar = "most_similar"
+    least_similar = "least_similar"

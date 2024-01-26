@@ -16,27 +16,15 @@ import dataclasses
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from opensearchpy import OpenSearch, helpers
-from opensearchpy.exceptions import (
-    NotFoundError,
-    OpenSearchException,
-    OpenSearchWarning,
-    RequestError,
-)
+from opensearchpy.exceptions import NotFoundError, OpenSearchException, OpenSearchWarning, RequestError
 from opensearchpy.helpers import BulkIndexError
 
 from argilla.server.daos.backend import query_helpers
 from argilla.server.daos.backend.base import BackendErrorHandler, IndexNotFoundError
 from argilla.server.daos.backend.client_adapters.base import IClientAdapter
 from argilla.server.daos.backend.metrics.base import ElasticsearchMetric
-from argilla.server.daos.backend.search.model import (
-    BaseQuery,
-    SortableField,
-    SortConfig,
-)
-from argilla.server.daos.backend.search.query_builder import (
-    HighlightParser,
-    OpenSearchQueryBuilder,
-)
+from argilla.server.daos.backend.search.model import BaseQuery, SortableField, SortConfig
+from argilla.server.daos.backend.search.query_builder import HighlightParser, OpenSearchQueryBuilder
 
 
 @dataclasses.dataclass
@@ -64,12 +52,8 @@ class OpenSearchClient(IClientAdapter):
         index: str,
         vectors: Dict[str, int],
     ):
-        self._check_vector_supported()
+        self.set_index_settings(index=index, settings={"index.knn": False})
 
-        self.set_index_settings(
-            index=index,
-            settings={"index.knn": False},
-        )
         vector_mappings = {}
         for vector_name, vector_dimension in vectors.items():
             index_mapping = {
@@ -89,13 +73,6 @@ class OpenSearchClient(IClientAdapter):
             index=index,
             properties=vector_mappings,
         )
-
-    def _check_vector_supported(self):
-        if not self.vector_search_supported:
-            raise ValueError(
-                "The vector search is not supported for this elasticsearch version. "
-                "Please, update the server to use this feature"
-            )
 
     def search_docs(
         self,
@@ -729,10 +706,10 @@ class OpenSearchClient(IClientAdapter):
         is_phrase_query: bool = True,
         add_sort_info: bool = False,
     ):
-        data = {
-            **document["_source"],
-            "id": document["_id"],
-        }
+        data = document["_source"]
+
+        if "id" not in data:
+            data["id"] = document["_id"]
 
         if add_sort_info and "sort" in document:
             data["sort"] = document["sort"]
@@ -754,9 +731,6 @@ class OpenSearchClient(IClientAdapter):
         size: int,
         routing: Optional[str] = None,
     ):
-        if "knn" in es_query["query"]:
-            self._check_vector_supported()
-
         results = self.__client__.search(
             index=index,
             body=es_query,

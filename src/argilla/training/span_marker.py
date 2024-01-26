@@ -17,26 +17,24 @@ from typing import List, Union
 
 from datasets import DatasetDict
 
-import argilla as rg
+from argilla.client.models import TokenClassificationRecord
 from argilla.training.base import ArgillaTrainerSkeleton
 from argilla.training.utils import filter_allowed_args, get_default_args
-from argilla.utils.dependency import require_version
+from argilla.utils.dependency import require_dependencies
 
 
 class ArgillaSpanMarkerTrainer(ArgillaTrainerSkeleton):
     _logger = logging.getLogger("ArgillaSpanMarkerTrainer")
     _logger.setLevel(logging.INFO)
 
-    require_version("span_marker")
-    require_version("transformers>=4.19.0")  # <- required for span_marker evaluation
-
     def __init__(self, *args, **kwargs) -> None:
+        require_dependencies(["datasets", "span_marker>=1.2", "transformers>=4.19.0"])
         super().__init__(*args, **kwargs)
 
         import torch
         from span_marker import SpanMarkerModel
 
-        self._span_marker_model = None
+        self.trainer_model = None
 
         self.device = "cpu"
         if torch.backends.mps.is_available():
@@ -49,6 +47,7 @@ class ArgillaSpanMarkerTrainer(ArgillaTrainerSkeleton):
 
         if self._model is None:
             self._model = "bert-base-cased"
+            self._logger.warning(f"No model defined. Using the default model {self._model}.")
 
         if isinstance(self._dataset, DatasetDict):
             self._train_dataset = self._dataset["train"]
@@ -57,13 +56,13 @@ class ArgillaSpanMarkerTrainer(ArgillaTrainerSkeleton):
             self._train_dataset = self._dataset
             self._eval_dataset = None
 
-        if self._record_class == rg.TokenClassificationRecord:
+        if self._record_class == TokenClassificationRecord:
             self._column_mapping = {"text": "text", "token": "tokens", "ner_tags": "ner_tags"}
             self._label_list = self._train_dataset.features["ner_tags"].feature.names
 
             self._model_class = SpanMarkerModel
         else:
-            raise NotImplementedError("rg.Text2TextRecord and rg.TextClassification are not supported.")
+            raise NotImplementedError("Text2TextRecord and TextClassification are not supported.")
 
         self.init_training_args()
 
@@ -79,7 +78,7 @@ class ArgillaSpanMarkerTrainer(ArgillaTrainerSkeleton):
         self.trainer_kwargs["weight_decay"] = 0.01
 
     def init_model(self) -> None:
-        self._span_marker_model = self._model_class.from_pretrained(**self.model_kwargs).to(self.device)
+        self.trainer_model = self._model_class.from_pretrained(**self.model_kwargs).to(self.device)
 
     def update_config(self, **kwargs) -> None:
         """
@@ -115,18 +114,17 @@ class ArgillaSpanMarkerTrainer(ArgillaTrainerSkeleton):
         self.init_model()
 
         # set trainer
-        self._training_args = TrainingArguments(**self.trainer_kwargs)
-        self._span_marker_trainer = Trainer(
-            args=self._training_args,
-            model=self._span_marker_model,
+        self.trainer = Trainer(
+            args=TrainingArguments(**self.trainer_kwargs),
+            model=self.trainer_model,
             train_dataset=self._train_dataset,
             eval_dataset=self._eval_dataset,
         )
 
         # train
-        self._span_marker_trainer.train()
+        self.trainer.train()
         if self._eval_dataset:
-            self._metrics = self._span_marker_trainer.evaluate()
+            self._metrics = self.trainer.evaluate()
             self._logger.info(self._metrics)
         else:
             self._metrics = None
@@ -145,7 +143,9 @@ class ArgillaSpanMarkerTrainer(ArgillaTrainerSkeleton):
         Returns:
           A list of predictions
         """
-        if self._span_marker_model is None:
+        from datasets import Dataset
+
+        if self.trainer_model is None:
             self._logger.warning("Using model without fine-tuning.")
             self.init_model()
 
@@ -154,7 +154,7 @@ class ArgillaSpanMarkerTrainer(ArgillaTrainerSkeleton):
             text = [text]
             str_input = True
 
-        entities_list = self._span_marker_model.predict(text, **kwargs)
+        entities_list = self.trainer_model.predict(text, **kwargs)
 
         if as_argilla_records:
             formatted_prediction = []
@@ -164,7 +164,10 @@ class ArgillaSpanMarkerTrainer(ArgillaTrainerSkeleton):
                     (entity["label"], entity["char_start_index"], entity["char_end_index"], entity["score"])
                     for entity in entities
                 ]
-                encoding = self._span_marker_model.tokenizer(sentence, return_batch_encoding=True)["batch_encoding"]
+                dataset = Dataset.from_dict({"tokens": text})
+                encoding = self.trainer_model.tokenizer({"tokens": dataset["tokens"]}, return_batch_encoding=True)[
+                    "batch_encoding"
+                ]
                 word_ids = sorted(set(encoding.word_ids()) - {None})
                 tokens = []
                 for word_id in word_ids:
@@ -186,4 +189,4 @@ class ArgillaSpanMarkerTrainer(ArgillaTrainerSkeleton):
         Args:
           output_dir (str): the path to save the model to
         """
-        self._span_marker_model.save_pretrained(output_dir)
+        self.trainer_model.save_pretrained(output_dir)

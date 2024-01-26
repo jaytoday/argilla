@@ -18,15 +18,11 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from argilla.client.models import (
-    Record,
-    TextClassificationRecord,
-    TokenClassificationRecord,
-)
+from argilla.client.models import Record, TextClassificationRecord, TokenClassificationRecord
 from argilla.monitoring.base import BaseMonitor
-from argilla.utils.dependency import require_version
+from argilla.utils.dependency import require_dependencies
 
-require_version("starlette>=0.13.0")
+require_dependencies("starlette>=0.13.0")
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
@@ -65,7 +61,7 @@ def text_classification_mapper(inputs, outputs):
 
 class CachedJsonRequest(Request):
     """
-    We must a cached version of incoming requests since request body cannot be read from middleware directly.
+    We must have a cached version of incoming requests since the request body cannot be read from middleware directly.
     See <https://github.com/encode/starlette/issues/847> for more information
 
     TODO Remove usage of CachedRequest when https://github.com/encode/starlette/pull/848 is released
@@ -86,7 +82,7 @@ class CachedJsonRequest(Request):
 
 
 class ArgillaLogHTTPMiddleware(BaseHTTPMiddleware):
-    """An standard starlette middleware that enables argilla logs for http prediction requests"""
+    """A standard Starlette middleware that enables argilla logs for http prediction requests"""
 
     def __init__(
         self,
@@ -117,7 +113,7 @@ class ArgillaLogHTTPMiddleware(BaseHTTPMiddleware):
     def init(self):
         if self._monitor:
             return
-        from argilla.client.api import active_api
+        from argilla.client.singleton import active_api
 
         self._monitor = BaseMonitor(
             self,

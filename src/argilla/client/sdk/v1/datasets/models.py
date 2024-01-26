@@ -14,51 +14,114 @@
 #  limitations under the License.
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from enum import Enum
+from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import UUID
 
-try:
-    from typing import Literal
-except ImportError:
-    from typing_extensions import Literal
-
-from pydantic import BaseModel, Field, StrictInt, StrictStr
+from argilla.pydantic_v1 import BaseModel, Field, StrictInt, StrictStr, conint, root_validator
 
 
 class FeedbackDatasetModel(BaseModel):
     id: UUID
     name: str = Field(regex="^(?!-|_)[a-zA-Z0-9-_ ]+$")
     guidelines: Optional[str] = None
+    # Set default for backward compatibility
+    allow_extra_metadata: Optional[bool] = True
     status: Optional[str] = None
-    workspace_id: Optional[str] = None
-    created_at: datetime
-    last_updated: datetime
+    workspace_id: Optional[UUID] = None
+    last_activity_at: Optional[datetime] = None
+    inserted_at: datetime
+    updated_at: datetime
+
+
+class FeedbackRankingValueModel(BaseModel):
+    value: StrictStr
+    rank: Optional[conint(ge=1)] = None
 
 
 class FeedbackValueModel(BaseModel):
-    value: Union[StrictStr, StrictInt]
+    value: Union[StrictStr, StrictInt, List[str], List[FeedbackRankingValueModel]]
+
+
+class FeedbackResponseStatus(str, Enum):
+    draft = "draft"
+    submitted = "submitted"
+    discarded = "discarded"
+
+
+class FeedbackResponseStatusFilter(str, Enum):
+    draft = "draft"
+    missing = "missing"  # not a status as-is, used as a filter to indicate no response
+    submitted = "submitted"
+    discarded = "discarded"
+
+
+# TODO: these models shouldn't transform the payload from the server to not JSON serializable types (UUID, datetime, etc)
 
 
 class FeedbackResponseModel(BaseModel):
     id: UUID
-    values: Dict[str, FeedbackValueModel]
-    status: Literal["submitted", "discarded"]  # API also contains "missing", but it's just a filter-status
+    values: Union[Dict[str, FeedbackValueModel], None]
+    status: FeedbackResponseStatus
     user_id: UUID
     inserted_at: datetime
     updated_at: datetime
 
 
+class FeedbackSuggestionModel(BaseModel):
+    id: UUID
+    question_id: str
+    type: Optional[Literal["human", "model"]] = None
+    score: Optional[float] = None
+    value: Any
+    agent: Optional[str] = None
+
+
 class FeedbackItemModel(BaseModel):
     id: UUID
     fields: Dict[str, Any]
+    metadata: Optional[Dict[str, Any]] = None
     external_id: Optional[str] = None
     responses: Optional[List[FeedbackResponseModel]] = []
+    vectors: Optional[Dict[str, List[float]]] = None
+    suggestions: Optional[List[FeedbackSuggestionModel]] = []
+    vectors: Optional[Dict[str, List[float]]] = {}
     inserted_at: datetime
     updated_at: datetime
 
 
 class FeedbackRecordsModel(BaseModel):
     items: List[FeedbackItemModel]
+    total: int
+
+
+# TODO: `query_score` naming can be improved to simply `score`. (frontend should be aligned)
+# TODO: Maybe `query_score` should not be optional.
+class FeedbackRecordSearchModel(BaseModel):
+    record: FeedbackItemModel
+    query_score: Optional[float]
+
+
+class FeedbackRecordsSearchModel(BaseModel):
+    items: List[FeedbackRecordSearchModel]
+    total: int
+
+
+class FeedbackRecordsSearchVectorQuery(BaseModel):
+    name: str
+    record_id: Optional[UUID] = None
+    value: Optional[List[float]] = None
+
+    @root_validator(skip_on_failure=True)
+    def check_required(cls, values: dict) -> dict:
+        """Check that either 'record_id' or 'value' is provided"""
+        record_id = values.get("record_id")
+        value = values.get("value")
+
+        if bool(record_id) == bool(value):
+            raise ValueError("Either 'record_id' or 'value' must be provided")
+
+        return values
 
 
 class FeedbackFieldModel(BaseModel):
@@ -80,3 +143,34 @@ class FeedbackQuestionModel(BaseModel):
     settings: Dict[str, Any]
     inserted_at: datetime
     updated_at: datetime
+
+
+class FeedbackMetadataPropertyModel(BaseModel):
+    id: UUID
+    name: str
+    title: str
+    visible_for_annotators: bool
+    settings: Dict[str, Any]
+    inserted_at: datetime
+    updated_at: datetime
+
+
+class FeedbackRecordsMetricsModel(BaseModel):
+    count: int
+
+
+class FeedbackVectorSettingsModel(BaseModel):
+    id: UUID
+    name: str
+    title: str
+    dimensions: int
+    inserted_at: datetime
+    updated_at: datetime
+
+
+class FeedbackListVectorSettingsModel(BaseModel):
+    items: List[FeedbackVectorSettingsModel]
+
+
+class FeedbackMetricsModel(BaseModel):
+    records: FeedbackRecordsMetricsModel

@@ -17,7 +17,7 @@ from typing import Optional, Set, Union
 
 import deprecated
 
-from argilla.client import api
+from argilla.client import singleton
 from argilla.metrics import helpers
 from argilla.metrics.models import MetricSummary
 
@@ -33,7 +33,7 @@ def tokens_length(name: str, query: Optional[str] = None, interval: int = 1) -> 
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://argilla.readthedocs.io/en/stable/guides/queries.html>`_
+            `query string syntax <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
         interval: The bins or bucket for result histogram
 
     Returns:
@@ -47,7 +47,7 @@ def tokens_length(name: str, query: Optional[str] = None, interval: int = 1) -> 
     """
     warnings.warn(message=_UNUSED_METRIC_WARNING_MESSAGE, category=DeprecationWarning)
 
-    metric = api.active_api().compute_metric(name, metric="tokens_length", query=query, interval=interval)
+    metric = singleton.active_api().compute_metric(name, metric="tokens_length", query=query, interval=interval)
 
     return MetricSummary.new_summary(
         data=metric.results,
@@ -60,12 +60,12 @@ def tokens_length(name: str, query: Optional[str] = None, interval: int = 1) -> 
 
 
 def token_frequency(name: str, query: Optional[str] = None, tokens: int = 1000) -> MetricSummary:
-    """Computes the token frequency distribution for a numbe of tokens.
+    """Computes the token frequency distribution for a number of tokens.
 
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://argilla.readthedocs.io/en/stable/guides/queries.html>`_
+            `query string syntax <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
         tokens: The top-k number of tokens to retrieve
 
     Returns:
@@ -77,7 +77,7 @@ def token_frequency(name: str, query: Optional[str] = None, tokens: int = 1000) 
         >>> summary.visualize() # will plot a histogram with results
         >>> summary.data # the top-50 tokens frequency
     """
-    metric = api.active_api().compute_metric(name, metric="token_frequency", query=query, size=tokens)
+    metric = singleton.active_api().compute_metric(name, metric="token_frequency", query=query, size=tokens)
 
     return MetricSummary.new_summary(
         data=metric.results,
@@ -94,7 +94,7 @@ def token_length(name: str, query: Optional[str] = None) -> MetricSummary:
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://argilla.readthedocs.io/en/stable/guides/queries.html>`_
+            `query string syntax <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
 
     Returns:
         The summary for token length distribution
@@ -107,7 +107,7 @@ def token_length(name: str, query: Optional[str] = None) -> MetricSummary:
     """
     warnings.warn(message=_UNUSED_METRIC_WARNING_MESSAGE, category=DeprecationWarning)
 
-    metric = api.active_api().compute_metric(name, metric="token_length", query=query)
+    metric = singleton.active_api().compute_metric(name, metric="token_length", query=query)
 
     return MetricSummary.new_summary(
         data=metric.results,
@@ -133,7 +133,7 @@ def token_capitalness(name: str, query: Optional[str] = None) -> MetricSummary:
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://argilla.readthedocs.io/en/stable/guides/queries.html>`_
+            `query string syntax <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
 
     Returns:
         The summary for token length distribution
@@ -144,7 +144,7 @@ def token_capitalness(name: str, query: Optional[str] = None) -> MetricSummary:
         >>> summary.visualize() # will plot a histogram with results
         >>> summary.data # The token capitalness distribution
     """
-    metric = api.active_api().compute_metric(name, metric="token_capitalness", query=query)
+    metric = singleton.active_api().compute_metric(name, metric="token_capitalness", query=query)
 
     return MetricSummary.new_summary(
         data=metric.results,
@@ -196,7 +196,7 @@ def mention_length(
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://argilla.readthedocs.io/en/stable/guides/queries.html>`_
+            `query string syntax <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
         level: The mention length level. Accepted values are "token" and "char"
         compute_for: Metric can be computed for annotations or predictions. Accepted values are
             ``Annotations`` and ``Predictions``. Defaults to ``Predictions``.
@@ -217,7 +217,7 @@ def mention_length(
     accepted_levels = ["token", "char"]
     assert level in accepted_levels, f"Unexpected value for level. Accepted values are {accepted_levels}"
 
-    metric = api.active_api().compute_metric(
+    metric = singleton.active_api().compute_metric(
         name,
         metric=f"{_check_compute_for(compute_for)}_mention_{level}_length",
         query=query,
@@ -235,17 +235,14 @@ def mention_length(
 
 
 def entity_labels(
-    name: str,
-    query: Optional[str] = None,
-    compute_for: Union[str, ComputeFor] = Predictions,
-    labels: int = 50,
+    name: str, query: Optional[str] = None, compute_for: Union[str, ComputeFor] = Predictions, labels: int = 50
 ) -> MetricSummary:
     """Computes the entity labels distribution
 
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://argilla.readthedocs.io/en/stable/guides/queries.html>`_
+            `query string syntax <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
         compute_for: Metric can be computed for annotations or predictions. Accepted values are
             ``Annotations`` and ``Predictions``. Default to ``Predictions``
         labels: The number of top entities to retrieve. Lower numbers will be better performants
@@ -259,7 +256,7 @@ def entity_labels(
         >>> summary.visualize() # will plot a bar chart with results
         >>> summary.data # The top-20 entity tags
     """
-    metric = api.active_api().compute_metric(
+    metric = singleton.active_api().compute_metric(
         name,
         metric=f"{_check_compute_for(compute_for)}_entity_labels",
         query=query,
@@ -276,10 +273,7 @@ def entity_labels(
 
 
 def entity_density(
-    name: str,
-    query: Optional[str] = None,
-    compute_for: Union[str, ComputeFor] = Predictions,
-    interval: float = 0.005,
+    name: str, query: Optional[str] = None, compute_for: Union[str, ComputeFor] = Predictions, interval: float = 0.005
 ) -> MetricSummary:
     """Computes the entity density distribution. Then entity density is calculated at
     record level for each mention as ``mention_length/tokens_length``
@@ -287,7 +281,7 @@ def entity_density(
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://argilla.readthedocs.io/en/stable/guides/queries.html>`_
+            `query string syntax <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
         compute_for: Metric can be computed for annotations or predictions. Accepted values are
             ``Annotations`` and ``Predictions``. Default to ``Predictions``.
         interval: The interval for histogram. The entity density is defined in the range 0-1.
@@ -303,7 +297,7 @@ def entity_density(
 
     warnings.warn(message=_UNUSED_METRIC_WARNING_MESSAGE, category=DeprecationWarning)
 
-    metric = api.active_api().compute_metric(
+    metric = singleton.active_api().compute_metric(
         name,
         metric=f"{_check_compute_for(compute_for)}_entity_density",
         query=query,
@@ -320,9 +314,7 @@ def entity_density(
 
 
 def entity_capitalness(
-    name: str,
-    query: Optional[str] = None,
-    compute_for: Union[str, ComputeFor] = Predictions,
+    name: str, query: Optional[str] = None, compute_for: Union[str, ComputeFor] = Predictions
 ) -> MetricSummary:
     """Computes the entity capitalness. The entity capitalness splits the entity mention shape in 4 groups:
 
@@ -337,7 +329,7 @@ def entity_capitalness(
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://argilla.readthedocs.io/en/stable/guides/queries.html>`_
+            `query string syntax <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
         compute_for: Metric can be computed for annotations or predictions. Accepted values are
             ``Annotations`` and ``Predictions``. Default to ``Predictions``.
     Returns:
@@ -348,7 +340,7 @@ def entity_capitalness(
         >>> summary = entity_capitalness(name="example-dataset")
         >>> summary.visualize()
     """
-    metric = api.active_api().compute_metric(
+    metric = singleton.active_api().compute_metric(
         name,
         metric=f"{_check_compute_for(compute_for)}_entity_capitalness",
         query=query,
@@ -393,7 +385,7 @@ def top_k_mentions(
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://argilla.readthedocs.io/en/stable/guides/queries.html>`_
+            `query string syntax <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
         compute_for: Metric can be computed for annotations or predictions. Accepted values are
             ``Annotations`` and ``Predictions``. Default to ``Predictions``
         k: The number of mentions to retrieve.
@@ -411,7 +403,7 @@ def top_k_mentions(
     """
 
     threshold = max(1, threshold)
-    metric = api.active_api().compute_metric(
+    metric = singleton.active_api().compute_metric(
         name,
         metric=f"{_check_compute_for(compute_for)}_top_k_mentions_consistency",
         query=query,
@@ -453,7 +445,7 @@ def f1(name: str, query: Optional[str] = None) -> MetricSummary:
     Args:
         name: The dataset name.
         query: An ElasticSearch query with the
-            `query string syntax <https://argilla.readthedocs.io/en/stable/guides/queries.html>`_
+            `query string syntax <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
 
     Returns:
         The F1 metric summary containing precision, recall and the F1 score (averaged and per label).
@@ -469,7 +461,7 @@ def f1(name: str, query: Optional[str] = None) -> MetricSummary:
         >>> import pandas as pd
         >>> pd.DataFrame(summary.data.values(), index=summary.data.keys())
     """
-    metric = api.active_api().compute_metric(name, metric="F1", query=query)
+    metric = singleton.active_api().compute_metric(name, metric="F1", query=query)
 
     return MetricSummary.new_summary(
         data=metric.results,

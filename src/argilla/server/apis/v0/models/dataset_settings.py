@@ -14,9 +14,8 @@
 
 from typing import Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, validator
-
 from argilla.server.daos.models.datasets import EmbeddingsConfig
+from argilla.server.pydantic_v1 import BaseModel, Field, validator
 
 
 class AbstractDatasetSettings(BaseModel):
@@ -34,7 +33,7 @@ class LabelsSchema(BaseModel):
 
     labels: Union[List[str], List[Schema]] = Field(description="A set of labels")
 
-    @validator("labels", pre=True)
+    @validator("labels")
     def normalize_labels(cls, labels):
         """
         Labels schema accept a list of strings. Those string will be converted

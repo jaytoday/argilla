@@ -16,8 +16,6 @@
 from datetime import datetime
 from typing import Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, root_validator, validator
-
 from argilla.server.apis.v0.models.commons.model import (
     BaseRecord,
     BaseRecordInputs,
@@ -26,21 +24,16 @@ from argilla.server.apis.v0.models.commons.model import (
     SortableField,
 )
 from argilla.server.commons.models import PredictionStatus
-from argilla.server.schemas.datasets import UpdateDatasetRequest
-from argilla.server.services.search.model import (
-    ServiceBaseRecordsQuery,
-    ServiceBaseSearchResultsAggregations,
-)
+from argilla.server.pydantic_v1 import BaseModel, Field, root_validator, validator
+from argilla.server.schemas.v0.datasets import UpdateDatasetRequest
+from argilla.server.services.search.model import ServiceBaseRecordsQuery, ServiceBaseSearchResultsAggregations
 from argilla.server.services.tasks.text_classification.model import (
     DatasetLabelingRulesMetricsSummary as _DatasetLabelingRulesMetricsSummary,
 )
 from argilla.server.services.tasks.text_classification.model import (
     LabelingRuleMetricsSummary as _LabelingRuleMetricsSummary,
 )
-from argilla.server.services.tasks.text_classification.model import (
-    ServiceTextClassificationDataset,
-    TokenAttributions,
-)
+from argilla.server.services.tasks.text_classification.model import ServiceTextClassificationDataset, TokenAttributions
 from argilla.server.services.tasks.text_classification.model import (
     TextClassificationAnnotation as _TextClassificationAnnotation,
 )
@@ -54,7 +47,7 @@ class UpdateLabelingRule(BaseModel):
     )
     description: Optional[str] = Field(None, description="A brief description of the rule")
 
-    @root_validator
+    @root_validator(skip_on_failure=True)
     def initialize_labels(cls, values):
         label = values.get("label", None)
         labels = values.get("labels", [])

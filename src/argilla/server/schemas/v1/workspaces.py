@@ -13,9 +13,10 @@
 #  limitations under the License.
 
 from datetime import datetime
+from typing import List
 from uuid import UUID
 
-from pydantic import BaseModel
+from argilla.server.pydantic_v1 import BaseModel
 
 
 class Workspace(BaseModel):
@@ -26,3 +27,7 @@ class Workspace(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class Workspaces(BaseModel):
+    items: List[Workspace]

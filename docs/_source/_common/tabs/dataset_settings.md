@@ -9,7 +9,7 @@ dataset = rg.FeedbackDataset(
     guidelines="Add some guidelines for the annotation team here.",
     fields=[
         rg.TextField(name="prompt", title="Human prompt"),
-        rg.TextField(name="output", title="Generated output")
+        rg.TextField(name="output", title="Generated output", use_markdown=True)
     ],
     questions =[
         rg.RatingQuestion(
@@ -22,7 +22,8 @@ dataset = rg.FeedbackDataset(
         rg.TextQuestion(
             name="corrected-text",
             title="Provide a correction to the response:",
-            required=False
+            required=False,
+            use_markdown=True
         )
     ]
 )
@@ -37,7 +38,7 @@ import argilla as rg
 
 settings = rg.TextClassificationSettings(label_schema=["A", "B", "C"])
 
-rg.configure_dataset(name="my_dataset", settings=settings)
+rg.configure_dataset_settings(name="my_dataset", settings=settings)
 ```
 :::
 
@@ -47,7 +48,7 @@ import argilla as rg
 
 settings = rg.TokenClassificationSettings(label_schema=["A", "B", "C"])
 
-rg.configure_dataset(name="my_dataset", settings=settings)
+rg.configure_dataset_settings(name="my_dataset", settings=settings)
 ```
 :::
 

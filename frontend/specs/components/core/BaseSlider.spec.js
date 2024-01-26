@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import BaseSlider from "@/components/base/BaseSlider";
+import BaseSlider from "@/components/base/base-slider/BaseSlider";
 
 function mountBaseSlider() {
   return mount(BaseSlider, {
@@ -12,7 +12,7 @@ function mountBaseSlider() {
 }
 
 describe("BaseSlider", () => {
-  let spy = jest.spyOn(console, "error");
+  const spy = jest.spyOn(console, "error");
   afterEach(() => spy.mockReset());
 
   test("renders properly", () => {

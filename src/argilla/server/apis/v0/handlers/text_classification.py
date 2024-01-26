@@ -13,22 +13,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import itertools
-from typing import Iterable, List, Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, Security
-from fastapi.responses import StreamingResponse
 
-from argilla.server.apis.v0.handlers import (
-    metrics,
-    text_classification_dataset_settings,
-)
+from argilla.server.apis.v0.handlers import metrics, text_classification_dataset_settings
 from argilla.server.apis.v0.helpers import deprecate_endpoint
 from argilla.server.apis.v0.models.commons.model import BulkResponse
-from argilla.server.apis.v0.models.commons.params import (
-    CommonTaskHandlerDependencies,
-    RequestPagination,
-)
+from argilla.server.apis.v0.models.commons.params import CommonTaskHandlerDependencies, RequestPagination
 from argilla.server.apis.v0.models.text_classification import (
     CreateLabelingRule,
     DatasetLabelingRulesMetricsSummary,
@@ -37,7 +29,6 @@ from argilla.server.apis.v0.models.text_classification import (
     TextClassificationBulkRequest,
     TextClassificationDataset,
     TextClassificationQuery,
-    TextClassificationRecord,
     TextClassificationSearchAggregations,
     TextClassificationSearchRequest,
     TextClassificationSearchResults,
@@ -46,15 +37,11 @@ from argilla.server.apis.v0.models.text_classification import (
 from argilla.server.apis.v0.validators.text_classification import DatasetValidator
 from argilla.server.commons.config import TasksFactory
 from argilla.server.commons.models import TaskType
-from argilla.server.errors import EntityNotFoundError
 from argilla.server.models import User
-from argilla.server.schemas.datasets import CreateDatasetRequest
 from argilla.server.security import auth
 from argilla.server.services.datasets import DatasetsService
 from argilla.server.services.tasks.text_classification import TextClassificationService
-from argilla.server.services.tasks.text_classification.metrics import (
-    TextClassificationMetrics,
-)
+from argilla.server.services.tasks.text_classification.metrics import TextClassificationMetrics
 from argilla.server.services.tasks.text_classification.model import (
     ServiceLabelingRule,
     ServiceTextClassificationQuery,
@@ -64,6 +51,8 @@ from argilla.server.services.tasks.text_classification.model import (
 
 def configure_router():
     task_type = TaskType.text_classification
+    base_endpoint = f"/{{name}}/{task_type.value}"
+    new_base_endpoint = f"/{task_type.value}/{{name}}"
 
     TasksFactory.register_task(
         task_type=task_type,
@@ -72,9 +61,6 @@ def configure_router():
         record_class=ServiceTextClassificationRecord,
         metrics=TextClassificationMetrics,
     )
-
-    base_endpoint = f"/{{name}}/{task_type}"
-    new_base_endpoint = f"/{task_type}/{{name}}"
 
     router = APIRouter(tags=[task_type], prefix="/datasets")
 
@@ -95,36 +81,17 @@ def configure_router():
     ) -> BulkResponse:
         task = task_type
         workspace = common_params.workspace
-        try:
-            dataset = datasets.find_by_name(
-                current_user,
-                name=name,
-                task=task,
-                workspace=workspace,
-            )
-            dataset = datasets.update(
-                user=current_user,
-                dataset=dataset,
-                tags=bulk.tags,
-                metadata=bulk.metadata,
-            )
-        except EntityNotFoundError:
-            dataset = CreateDatasetRequest(name=name, workspace=workspace, task=task, **bulk.dict())
-            dataset = datasets.create_dataset(user=current_user, dataset=dataset)
+
+        dataset = await datasets.find_by_name(current_user, name=name, task=task, workspace=workspace)
+
+        await datasets.update(user=current_user, dataset=dataset, tags=bulk.tags, metadata=bulk.metadata)
 
         # TODO(@frascuchon): Validator should be applied in the service layer
         records = [ServiceTextClassificationRecord.parse_obj(r) for r in bulk.records]
         await validator.validate_dataset_records(user=current_user, dataset=dataset, records=records)
 
-        result = await service.add_records(
-            dataset=dataset,
-            records=records,
-        )
-        return BulkResponse(
-            dataset=name,
-            processed=result.processed,
-            failed=result.failed,
-        )
+        result = await service.add_records(dataset=dataset, records=records)
+        return BulkResponse(dataset=name, processed=result.processed, failed=result.failed)
 
     @router.post(
         f"{base_endpoint}:search",
@@ -132,7 +99,7 @@ def configure_router():
         response_model_exclude_none=True,
         operation_id="search_records",
     )
-    def search_records(
+    async def search_records(
         name: str,
         search: TextClassificationSearchRequest = None,
         common_params: CommonTaskHandlerDependencies = Depends(),
@@ -173,7 +140,7 @@ def configure_router():
 
         search = search or TextClassificationSearchRequest()
         query = search.query or TextClassificationQuery()
-        dataset = datasets.find_by_name(
+        dataset = await datasets.find_by_name(
             user=current_user,
             name=name,
             task=task_type,
@@ -210,7 +177,7 @@ def configure_router():
         service: TextClassificationService = Depends(TextClassificationService.get_instance),
         current_user: User = Security(auth.get_current_user),
     ) -> List[LabelingRule]:
-        dataset = datasets.find_by_name(
+        dataset = await datasets.find_by_name(
             user=current_user,
             name=name,
             task=task_type,
@@ -237,7 +204,7 @@ def configure_router():
         datasets: DatasetsService = Depends(DatasetsService.get_instance),
         current_user: User = Security(auth.get_current_user),
     ) -> LabelingRule:
-        dataset = datasets.find_by_name(
+        dataset = await datasets.find_by_name(
             user=current_user,
             name=name,
             task=task_type,
@@ -273,7 +240,7 @@ def configure_router():
         datasets: DatasetsService = Depends(DatasetsService.get_instance),
         current_user: User = Security(auth.get_current_user),
     ) -> LabelingRuleMetricsSummary:
-        dataset = datasets.find_by_name(
+        dataset = await datasets.find_by_name(
             user=current_user,
             name=name,
             task=task_type,
@@ -299,7 +266,7 @@ def configure_router():
         datasets: DatasetsService = Depends(DatasetsService.get_instance),
         current_user: User = Security(auth.get_current_user),
     ) -> DatasetLabelingRulesMetricsSummary:
-        dataset = datasets.find_by_name(
+        dataset = await datasets.find_by_name(
             user=current_user,
             name=name,
             task=task_type,
@@ -324,7 +291,7 @@ def configure_router():
         datasets: DatasetsService = Depends(DatasetsService.get_instance),
         current_user: User = Security(auth.get_current_user),
     ) -> None:
-        dataset = datasets.find_by_name(
+        dataset = await datasets.find_by_name(
             user=current_user,
             name=name,
             task=task_type,
@@ -351,7 +318,7 @@ def configure_router():
         datasets: DatasetsService = Depends(DatasetsService.get_instance),
         current_user: User = Security(auth.get_current_user),
     ) -> LabelingRule:
-        dataset = datasets.find_by_name(
+        dataset = await datasets.find_by_name(
             user=current_user,
             name=name,
             task=task_type,
@@ -379,7 +346,7 @@ def configure_router():
         datasets: DatasetsService = Depends(DatasetsService.get_instance),
         current_user: User = Security(auth.get_current_user),
     ) -> LabelingRule:
-        dataset = datasets.find_by_name(
+        dataset = await datasets.find_by_name(
             user=current_user,
             name=name,
             task=task_type,

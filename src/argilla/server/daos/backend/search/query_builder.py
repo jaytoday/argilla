@@ -14,10 +14,7 @@
 import logging
 import re
 from enum import Enum
-from typing import Any, Dict, List, Optional
-
-from luqum.elasticsearch import ElasticsearchQueryBuilder, SchemaAnalyzer
-from luqum.parser import parser
+from typing import Any, Dict, List, Optional, Union
 
 from argilla.server.daos.backend.query_helpers import filters
 from argilla.server.daos.backend.search.model import (
@@ -144,31 +141,11 @@ class EsQueryBuilder:
         if not query:
             return filters.match_all()
 
-        if not query.advanced_query_dsl or not query.query_text:
-            return self._to_es_query(query)
-
-        text_search = query.query_text
-        new_query = query.copy(update={"query_text": None})
-
-        schema = SchemaAnalyzer(schema)
-        es_query_builder = ElasticsearchQueryBuilder(
-            **{
-                **schema.query_builder_options(),
-                "default_field": "text",
-            }
-        )
-
-        query_tree = parser.parse(text_search)
-        query_text = es_query_builder(query_tree)
-        boolean_filter_query = self._to_es_query(new_query)
-        return filters.boolean_filter(
-            filter_query=boolean_filter_query,
-            must_query=query_text,
-        )
+        return self._to_es_query(query)
 
     def map_2_es_query(
         self,
-        schema: Dict[str, Any],
+        schema: Union[Dict[str, Any], None],
         query: BackendQuery,
         sort: SortConfig = SortConfig(),
         exclude_fields: Optional[List[str]] = None,
@@ -257,7 +234,7 @@ class EsQueryBuilder:
             if valid_fields:
                 if sortable_field.id.split(".")[0] not in valid_fields:
                     raise AssertionError(
-                        f"Wrong sort id {sortable_field.id}. Valid values are: " f"{[str(v) for v in valid_fields]}"
+                        f"Wrong sort id {sortable_field.id}. Valid values are: {[str(v) for v in valid_fields]}"
                     )
             field = sortable_field.id
             if field == id_field and use_id_keyword:
@@ -280,7 +257,6 @@ class EsQueryBuilder:
 
         query_data = query.dict(
             exclude={
-                "advanced_query_dsl",
                 "vector",
                 "query_text",
                 "metadata",

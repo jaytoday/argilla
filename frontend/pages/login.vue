@@ -17,7 +17,8 @@
 
 <template>
   <div class="container">
-    <form class="form" @submit.prevent="userLogin">
+    <BaseLoading v-if="hasAuthToken" />
+    <form class="form" @submit.prevent="onLoginUser">
       <brand-logo class="form__logo" />
       <div class="form__content">
         <p class="form__title">Welcome</p>
@@ -40,9 +41,7 @@
         </div>
         <p v-if="deployment === 'quickstart'">
           You are using the Quickstart version of Argilla. Check
-          <a
-            href="https://docs.argilla.io/en/latest/getting_started/quickstart.html"
-            target="_blank"
+          <a :href="$config.documentationSiteQuickStart" target="_blank"
             >this guide</a
           >
           to learn more about usage and configuration options.
@@ -58,17 +57,15 @@
       <geometric-shape-a />
       <p class="login__text">
         To get support from the community, join us on
-        <a
-          href="https://join.slack.com/t/rubrixworkspace/shared_invite/zt-whigkyjn-a3IUJLD7gDbTZ0rKlvcJ5g"
-          target="_blank"
-          >Slack</a
-        >
+        <a :href="$config.slackCommunity" target="_blank">Slack</a>
       </p>
     </div>
   </div>
 </template>
 
 <script>
+import { Notification } from "@/models/Notifications";
+
 export default {
   layout: "app",
   data() {
@@ -79,20 +76,39 @@ export default {
         password: "",
       },
       deployment: false,
+      hasAuthToken: false,
     };
+  },
+  async created() {
+    const rawAuthToken = this.$route.query.auth;
+
+    if (!rawAuthToken) return;
+
+    try {
+      const [username, password] = atob(rawAuthToken).split(":");
+
+      if (username && password) {
+        this.hasAuthToken = true;
+
+        try {
+          await this.loginUser({ username, password });
+        } catch {
+          this.hasAuthToken = false;
+        }
+      }
+    } catch {
+      /* lint:disable:no-empty */
+    }
   },
   async mounted() {
     try {
-      fetch("deployment.json")
-        .then((r) => r.json())
-        .then(({ deployment }) => {
-          this.deployment = deployment;
-        });
-    } catch (e) {
+      const response = await fetch("deployment.json");
+
+      const { deployment } = await response.json();
+
+      this.deployment = deployment;
+    } catch {
       this.deployment = null;
-    }
-    if (this.$auth.loggedIn) {
-      return;
     }
   },
   computed: {
@@ -111,19 +127,25 @@ export default {
         path: redirect_url,
       });
     },
-    async userLogin() {
+    async loginUser(authData) {
+      await this.$auth.logout();
+      await this.$store.dispatch("entities/deleteAll");
+      await this.$auth.loginWith("authProvider", {
+        data: this.encodedLoginData(authData),
+      });
+
+      Notification.dispatch("clear");
+
+      this.nextRedirect();
+    },
+    async onLoginUser() {
       try {
-        await this.$store.dispatch("entities/deleteAll");
-        await this.$auth.loginWith("authProvider", {
-          data: this.encodedLoginData(),
-        });
-        this.nextRedirect();
+        await this.loginUser(this.login);
       } catch (err) {
         this.error = err;
       }
     },
-    encodedLoginData() {
-      const { username, password } = this.login;
+    encodedLoginData({ username, password }) {
       return `username=${encodeURIComponent(
         username
       )}&password=${encodeURIComponent(password)}`;

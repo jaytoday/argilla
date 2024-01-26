@@ -12,100 +12,26 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+
 import asyncio
-import logging
 import warnings
 from asyncio import Future
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple, Union
 
 from argilla.client.client import Argilla
 from argilla.client.datasets import Dataset
-from argilla.client.models import (  # TODO Remove TextGenerationRecord
-    BulkResponse,
-    Record,
-)
+from argilla.client.enums import DatasetType
+from argilla.client.feedback.dataset.local.dataset import FeedbackDataset
+from argilla.client.models import BulkResponse, Record  # TODO Remove TextGenerationRecord
+from argilla.client.sdk.commons import errors
+from argilla.client.sdk.datasets.models import Dataset as DatasetModel
+from argilla.client.sdk.v1.workspaces.models import WorkspaceModel
+from argilla.client.singleton import ArgillaSingleton
 
-_LOGGER = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from argilla.client.feedback.dataset.remote.dataset import RemoteFeedbackDataset
 
 Api = Argilla  # Backward compatibility
-
-
-class ArgillaSingleton:
-    """The active argilla singleton instance"""
-
-    _INSTANCE: Optional[Argilla] = None
-
-    @classmethod
-    def get(cls) -> Argilla:
-        if cls._INSTANCE is None:
-            return cls.init()
-        return cls._INSTANCE
-
-    @classmethod
-    def clear(cls):
-        cls._INSTANCE = None
-
-    @classmethod
-    def init(
-        cls,
-        api_url: Optional[str] = None,
-        api_key: Optional[str] = None,
-        workspace: Optional[str] = None,
-        timeout: int = 60,
-        extra_headers: Optional[Dict[str, str]] = None,
-    ) -> Argilla:
-        cls._INSTANCE = None
-
-        cls._INSTANCE = Argilla(
-            api_url=api_url,
-            api_key=api_key,
-            timeout=timeout,
-            workspace=workspace,
-            extra_headers=extra_headers,
-        )
-
-        return cls._INSTANCE
-
-
-def init(
-    api_url: Optional[str] = None,
-    api_key: Optional[str] = None,
-    workspace: Optional[str] = None,
-    timeout: int = 60,
-    extra_headers: Optional[Dict[str, str]] = None,
-):
-    """Init the Python client.
-
-    We will automatically init a default client for you when calling other client methods.
-    The arguments provided here will overwrite your corresponding environment variables.
-
-    Args:
-        api_url: Address of the REST API. If `None` (default) and the env variable ``ARGILLA_API_URL`` is not set,
-            it will default to `http://localhost:6900`.
-        api_key: Authentification key for the REST API. If `None` (default) and the env variable ``ARGILLA_API_KEY``
-            is not set, it will default to `argilla.apikey`.
-        workspace: The workspace to which records will be logged/loaded. If `None` (default) and the
-            env variable ``ARGILLA_WORKSPACE`` is not set, it will default to the private user workspace.
-        timeout: Wait `timeout` seconds for the connection to timeout. Default: 60.
-        extra_headers: Extra HTTP headers sent to the server. You can use this to customize
-            the headers of argilla client requests, like additional security restrictions. Default: `None`.
-
-    Examples:
-        >>> import argilla as rg
-        >>>
-        >>> rg.init(api_url="http://localhost:9090", api_key="4AkeAPIk3Y")
-        >>> # Customizing request headers
-        >>> headers = {"X-Client-id":"id","X-Secret":"secret"}
-        >>> rg.init(api_url="http://localhost:9090", api_key="4AkeAPIk3Y", extra_headers=headers)
-    """
-
-    ArgillaSingleton.init(
-        api_url=api_url,
-        api_key=api_key,
-        workspace=workspace,
-        timeout=timeout,
-        extra_headers=extra_headers,
-    )
 
 
 def log(
@@ -247,8 +173,8 @@ def load(
     batch_size: int = 250,
     include_vectors: bool = True,
     include_metrics: bool = True,
-    as_pandas=None,
-) -> Dataset:
+    as_pandas: Optional[bool] = None,
+) -> Union[Dataset, "RemoteFeedbackDataset"]:
     """Loads a argilla dataset.
 
     Args:
@@ -256,13 +182,13 @@ def load(
         workspace: The workspace to which records will be logged/loaded. If `None` (default) and the
             env variable ``ARGILLA_WORKSPACE`` is not set, it will default to the private user workspace.
         query: An ElasticSearch query with the `query string
-            syntax <https://argilla.readthedocs.io/en/stable/guides/queries.html>`_
+            syntax <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
         vector: Vector configuration for a semantic search
         ids: If provided, load dataset records with given ids.
         limit: The number of records to retrieve.
         sort: The fields on which to sort [(<field_name>, 'asc|decs')].
         id_from: If provided, starts gathering the records starting from that Record.
-            As the Records returned with the load method are sorted by ID, ´id_from´
+            As the Records returned with the load method are sorted by ID, `id_from`
             can be used to load using batches.
         batch_size: If provided, load `batch_size` samples per request. A lower batch
             size may help avoid timeouts.
@@ -272,7 +198,6 @@ def load(
             By default, this parameter is set to `True`, meaning that metrics will be included.
         as_pandas: DEPRECATED! To get a pandas DataFrame do
             ``rg.load('my_dataset').to_pandas()``.
-
 
     Returns:
         A argilla dataset.
@@ -295,27 +220,40 @@ def load(
         >>> dataset_batch_2 = rg.load(name="example-dataset", limit=1000, id_from=dataset_batch_1[-1].id)
 
     """
-    return ArgillaSingleton.get().load(
-        name=name,
-        workspace=workspace,
-        query=query,
-        vector=vector,
-        ids=ids,
-        limit=limit,
-        sort=sort,
-        id_from=id_from,
-        batch_size=batch_size,
-        include_metrics=include_metrics,
-        include_vectors=include_vectors,
-        as_pandas=as_pandas,
-    )
+    argilla = ArgillaSingleton.get()
+    try:
+        return argilla.load(
+            name=name,
+            workspace=workspace,
+            query=query,
+            vector=vector,
+            ids=ids,
+            limit=limit,
+            sort=sort,
+            id_from=id_from,
+            batch_size=batch_size,
+            include_metrics=include_metrics,
+            include_vectors=include_vectors,
+            as_pandas=as_pandas,
+        )
+    except errors.ArApiResponseError as e:
+        workspace = workspace or argilla.get_workspace()
+        try:
+            dataset = FeedbackDataset.from_argilla(name=name, workspace=workspace)
+        except ValueError:
+            raise e
+
+        warnings.warn(
+            "Loaded dataset is a `FeedbackDataset`. It's recommended to use "
+            f"`rg.FeedbackDataset.from_argilla(name='{name}', workspace='{workspace}')` instead",
+            UserWarning,
+            stacklevel=2,
+        )
+
+        return dataset
 
 
-def copy(
-    dataset: str,
-    name_of_copy: str,
-    workspace: str = None,
-):
+def copy(dataset: str, name_of_copy: str, workspace: Optional[str] = None) -> None:
     """
     Creates a copy of a dataset including its tags and metadata
 
@@ -329,27 +267,55 @@ def copy(
         >>> rg.copy("my_dataset", name_of_copy="new_dataset")
         >>> rg.load("new_dataset")
     """
-    return ArgillaSingleton.get().copy(
+    ArgillaSingleton.get().copy(
         dataset=dataset,
         name_of_copy=name_of_copy,
         workspace=workspace,
     )
 
 
-def delete(name: str, workspace: Optional[str] = None):
+def delete(name: str, workspace: Optional[str] = None) -> None:
     """
-    Deletes a dataset.
+    Deletes an Argilla dataset from the server. It can be used with both `Dataset` and `FeedbackDataset`, although
+    for the latter it's recommended to use `rg.FeedbackDataset.delete` instead.
 
     Args:
-        name: The dataset name.
-        workspace: The workspace to which records will be logged/loaded. If `None` (default) and the
-            env variable ``ARGILLA_WORKSPACE`` is not set, it will default to the private user workspace.
+        name: The name of the dataset to delete.
+        workspace: The workspace to which the dataset belongs. If `None` (default) and the env variable
+            ``ARGILLA_WORKSPACE`` is not set, it will default to the private user workspace.
+
+    Raises:
+        ValueError: If no dataset is found with the given name and workspace.
+        PermissionError: If the dataset that's being deleted is a `FeedbackDataset` and the user doesn't have enough
+            permissions to delete it.
+        RuntimeError: If the dataset that's being deleted is a `FeedbackDataset` and some kind of error occurs during
+            the deletion process.
 
     Examples:
         >>> import argilla as rg
         >>> rg.delete(name="example-dataset")
     """
-    ArgillaSingleton.get().delete(name=name, workspace=workspace)
+    argilla = ArgillaSingleton.get()
+    workspace = workspace or argilla.get_workspace()
+    try:
+        # `delete` method is always successful, even if the dataset does not exist and that's why we need the extra
+        # call to `get_dataset` to check if the dataset exists. If it doesn't exist, then we try to delete a `FeedbackDataset`.
+        argilla.get_dataset(name=name, workspace=workspace)
+        argilla.delete(name=name, workspace=workspace)
+    except errors.ArApiResponseError as e:
+        try:
+            dataset = FeedbackDataset.from_argilla(name=name, workspace=workspace)
+        except ValueError:
+            raise e
+
+        dataset.delete()
+
+        warnings.warn(
+            "Removed dataset was a `FeedbackDataset`. It's recommended to use "
+            f"`rg.FeedbackDataset.from_argilla(name='{name}', workspace='{workspace}').delete()` instead.",
+            UserWarning,
+            stacklevel=2,
+        )
 
 
 def delete_records(
@@ -367,7 +333,7 @@ def delete_records(
         workspace: The workspace to which records will be logged/loaded. If `None` (default) and the
             env variable ``ARGILLA_WORKSPACE`` is not set, it will default to the private user workspace.
         query: An ElasticSearch query with the `query string syntax
-            <https://docs.argilla.io/en/latest/guides/query_datasets.html>`_
+            <https://docs.argilla.io/en/latest/practical_guides/filter_dataset.html>`_
         ids: If provided, deletes dataset records with given ids.
         discard_only: If `True`, matched records won't be deleted. Instead, they will be marked as `Discarded`
         discard_when_forbidden: Only super-user or dataset creator can delete records from a dataset.
@@ -398,7 +364,7 @@ def delete_records(
     )
 
 
-def set_workspace(workspace: str):
+def set_workspace(workspace: str) -> None:
     """Sets the active workspace.
 
     Args:
@@ -416,12 +382,47 @@ def get_workspace() -> str:
     return ArgillaSingleton.get().get_workspace()
 
 
-def active_client() -> Argilla:
-    """Returns the active argilla client.
+def list_workspaces() -> List[WorkspaceModel]:
+    """Lists all the available workspaces for the current user.
 
-    If Active client is None, initialize a default one.
+    Returns:
+        A list of `WorkspaceModel` objects, containing the workspace
+        attributes: name, id, created_at, and updated_at.
     """
-    return ArgillaSingleton.get()
+    warnings.warn(
+        "`Workspace.list` is recommended over `list_workspaces`, since you can easily"
+        " access the workspaces as a list of `Workspace` objects with their attributes"
+        " and methods.",
+        UserWarning,
+        stacklevel=1,
+    )
+    return ArgillaSingleton.get().list_workspaces()
 
 
-active_api = active_client  # backward compatibility
+def list_datasets(
+    workspace: Optional[str] = None, type: Optional[Union[str, DatasetType]] = None
+) -> List[Union[DatasetModel, "RemoteFeedbackDataset"]]:
+    """Lists all the available datasets for the current user in Argilla.
+
+    Args:
+        workspace: If provided, list datasets from that workspace only. Note that
+            the workspace must exist in advance, otherwise a HTTP 400 error will be
+            raised.
+
+    Returns:
+        A list of `DatasetModel` objects, containing the dataset
+        attributes: tags, metadata, name, id, task, owner, workspace, created_at,
+        and last_updated.
+    """
+    if type is not None:
+        type = type if isinstance(type, DatasetType) else DatasetType(type)
+
+    old_datasets = []
+    if type is None or type == DatasetType.other:
+        old_datasets = ArgillaSingleton.get().list_datasets(workspace=workspace)
+
+    datasets = []
+    if type is None or type == DatasetType.feedback:
+        datasets = FeedbackDataset.list(workspace=workspace)
+
+    return old_datasets + datasets

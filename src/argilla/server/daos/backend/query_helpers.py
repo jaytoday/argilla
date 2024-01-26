@@ -13,12 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+from enum import Enum
 from typing import Any, Dict, List, Optional, Type, Union
-
-from pydantic import BaseModel
 
 from argilla.server.commons.models import TaskStatus
 from argilla.server.daos.backend.mappings.helpers import mappings
+from argilla.server.pydantic_v1 import BaseModel
 
 
 def nested_mappings_from_base_model(model_class: Type[BaseModel]) -> Dict[str, Any]:
@@ -175,10 +175,10 @@ class filters:
         return {"terms": {field: values}}
 
     @staticmethod
-    def term_filter(field: str, value: Any) -> Optional[Dict[str, Any]]:
+    def term_filter(field: str, value: Union[str, Enum]) -> Optional[Dict[str, Any]]:
         if value is None:
             return None
-        return {"term": {field: value}}
+        return {"term": {field: value.value if isinstance(value, Enum) else value}}
 
     @staticmethod
     def range_filter(
